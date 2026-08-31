@@ -1,0 +1,25 @@
+schema: spec-driven
+
+# Project context (shown to AI when creating artifacts)
+context: |
+  Tech stack: Rust (edition 2024), stable toolchain via rustup, Cargo workspace ready for multi-crate layout
+  Project: XEngine — high-performance game engine (data-oriented design, ECS-first, zero/low cost abstractions)
+  Target platforms: Windows (dev), cross-platform planned (Linux, macOS, WASM)
+  Conventions:
+    - Modules prefer data-oriented design: SoA storage, cache-friendly iteration, avoid heap in hot paths
+    - Public API follows Rust API guidelines; unsafe code confined and documented with # Safety
+    - Unit + integration tests required for new behavior (cargo test)
+    - Performance-sensitive code backed by criteria/benchmarks (cargo bench) where applicable
+    - Conventional commits: feat/fix/docs/refactor/perf/test/chore
+  Git workflow: main branch trunk-based; features land via OpenSpec change proposals only
+
+# Per-artifact rules (optional)
+rules:
+  proposal:
+    - Keep proposals focused on a single feature or capability
+    - Always include "Non-goals" section
+    - Reference affected specs by path under openspec/specs/
+    - Include acceptance criteria; performance budgets when relevant
+  tasks:
+    - Break tasks into chunks of max 2 hours
+    - If a task touches performance-sensitive code, include a benchmark or maintain existing benches
