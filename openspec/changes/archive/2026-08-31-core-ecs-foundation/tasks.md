@@ -41,4 +41,4 @@
 
 - [x] 8.1 `benches` 占位（100k 实体 create + single 迭代，cargo bench 可运行）
 - [x] 8.2 文档同步（README 结构说明、模块 rustdoc 示例）；workspace `cargo test` 全绿 + `cargo run` 正常
-- [ ] 8.3 `openspec validate core-ecs-foundation` 通过；按流程归档（`openspec archive`）后创建 MR（feat/core-ecs-foundation → main）
+- [x] 8.3 `openspec validate core-ecs-foundation` 通过；按流程归档（`openspec archive`）后创建 MR（feat/core-ecs-foundation → main）→ https://github.com/rayfalling/XEngine/pull/1
