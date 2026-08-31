@@ -31,6 +31,23 @@ description: OpenSpec 规范驱动开发流程（XEngine 项目），覆盖提�
 5. **archive** — `openspec proposal archive <id>`：合并 specs 到 `openspec/specs/`，变更移入 `changes/archive/`
 6. **merge** — 归档完成后（且仅此后）才创建 PR 合入 main
 
+## 官方完整技能（优先使用）
+
+本目录下的 **`openspec-*` 系列**是 OpenSpec 官方完整工作流技能（由本机 `@fission-ai/openspec@1.4.1` 模板生成，
+frontmatter 带 `generatedBy: 1.4.1`），按流程阶段拆分，实现具体步骤时**优先加载对应技能**：
+
+| 技能 | 用途 |
+|---|---|
+| `openspec-propose` / `openspec-new-change` | 一次性生成完整提案 / 分步创建变更 |
+| `openspec-explore` | 探索与澄清需求（写提案前） |
+| `openspec-ff-change` | 跳过步骤、快进生成全部产物 |
+| `openspec-continue-change` | 续写下一个产物 |
+| `openspec-apply-change` | 从任务清单实施变更 |
+| `openspec-verify-change` | 验证实现与产物一致（归档前） |
+| `openspec-archive-change` / `openspec-bulk-archive-change` | 归档（单个/批量）——**合入 main 的前置条件** |
+| `openspec-sync-specs` | 不归档情况下同步 delta specs 到主规范 |
+| `openspec-onboard` | 新手完整流程演练 |
+
 ## 命令速查
 
 ```pwsh
