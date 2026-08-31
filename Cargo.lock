@@ -5,3 +5,10 @@ version = 4
 [[package]]
 name = "xengine"
 version = "0.1.0"
+dependencies = [
+ "xengine-core",
+]
+
+[[package]]
+name = "xengine-core"
+version = "0.1.0"
