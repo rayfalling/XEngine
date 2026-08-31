@@ -7,11 +7,13 @@ context: |
   Target platforms: Windows (dev), cross-platform planned (Linux, macOS, WASM)
   Conventions:
     - Modules prefer data-oriented design: SoA storage, cache-friendly iteration, avoid heap in hot paths
+    - Layered architecture: CORE layer is 100% Rust; DEVICE/PLATFORM layer mixes C++/Objective-C/Rust driving graphics backends (D3D12 on Windows, Metal on Apple, Vulkan cross-platform); core never touches platform graphics APIs directly, platform layers bridge through FFI/bindings with # Safety
+    - Every core function and component has a dedicated unit test
     - Public API follows Rust API guidelines; unsafe code confined and documented with # Safety
     - Unit + integration tests required for new behavior (cargo test)
     - Performance-sensitive code backed by criteria/benchmarks (cargo bench) where applicable
     - Conventional commits: feat/fix/docs/refactor/perf/test/chore
-  Git workflow: main branch trunk-based; features land via OpenSpec change proposals only
+  Git workflow: per-feature branches only (feat/<name>-<change-id>) merged via MR; an MR requires the linked OpenSpec change archived AND all unit tests passing (cargo test); direct pushes to main are forbidden
 
 # Per-artifact rules (optional)
 rules:
@@ -20,6 +22,8 @@ rules:
     - Always include "Non-goals" section
     - Reference affected specs by path under openspec/specs/
     - Include acceptance criteria; performance budgets when relevant
+    - State the affected layer (core/device) and platform backends (D3D12/Metal/Vulkan)
   tasks:
     - Break tasks into chunks of max 2 hours
+    - Every task implementing a core function or component includes its unit tests
     - If a task touches performance-sensitive code, include a benchmark or maintain existing benches

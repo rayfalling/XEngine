@@ -10,7 +10,10 @@ description: OpenSpec 规范驱动开发流程（XEngine 项目），覆盖提�
 > **任何 OpenSpec 变更必须完成 `openspec proposal archive <ID>`（归档）之后，才允许合入 main 分支。**
 >
 > main 分支只接受：规范已归档进 `openspec/specs/`、实现通过 `openspec proposal validate` 校验、
-> `cargo test` 全绿的代码。未归档的 `openspec/changes/` 条目 = 未完成，不得开始 PR/合入流程。
+> `cargo test` 全绿的代码。未归档的 `openspec/changes/` 条目 = 未完成，不得开始 MR/合入流程。
+>
+> **每次 MR 前 `cargo test` 必须全部通过**；每特性独立分支 + MR（禁止直接推 main）；
+> 核心函数与组件必须有对应单元测试。
 
 ## 目录结构
 
@@ -25,11 +28,13 @@ description: OpenSpec 规范驱动开发流程（XEngine 项目），覆盖提�
    - 变更聚焦单一能力；性能相关变更写明性能预算
 2. **review** — `openspec proposal list` / `openspec proposal show <id>` 确认内容
 3. **implement** — `openspec proposal apply <id>` 导出任务清单，按 tasks 实现
+   - 架构分层：核心层（Core）100% Rust；设备平台层（Device）C++/Objective-C/Rust 混合调用，对接 D3D12（Windows-C++）、Metal（Apple-ObjC/C++）、Vulkan（跨平台）；核心层不直接依赖平台图形 API
    - Rust 约定：数据导向设计（SoA/ECS）、热路径避免堆分配、unsafe 需 `# Safety` 文档、
-     `cargo test` 全绿、性能敏感代码带 benchmark（cargo bench）
+     `cargo test` 全绿、**核心函数与组件必须有单元测试**、性能敏感代码带 benchmark（cargo bench）
 4. **validate** — `openspec proposal validate <id>`：规范与实现一致性校验，通过后进入下一阶段
 5. **archive** — `openspec proposal archive <id>`：合并 specs 到 `openspec/specs/`，变更移入 `changes/archive/`
-6. **merge** — 归档完成后（且仅此后）才创建 PR 合入 main
+6. **merge** — 归档完成后（且仅此后）才创建 **MR** 合入 main：独立特性分支（`feat/<特性>-<变更ID>`），
+   MR 前 `cargo test` 必须全绿，禁止直接推送 main
 
 ## 官方完整技能（优先使用）
 

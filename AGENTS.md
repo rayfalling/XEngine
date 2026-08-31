@@ -10,10 +10,25 @@ XEngine 是一个 Rust 高性能游戏引擎项目，采用 OpenSpec 规范驱�
 4. **硬性规则：变更必须完成归档（`openspec proposal archive <id>`）之后，才允许合入 main 分支。**
    未归档的 `openspec/changes/` 条目不视为完成，main 只接受已归档规范对应的代码。
 
-## 项目约定
+## 架构约束（分层）
 
-- Rust edition 2024，数据导向设计（ECS/SoA），热路径避免堆分配
-- unsafe 代码必须收敛并带 `# Safety` 文档
-- 性能敏感代码需要 benchmark（cargo bench）
+- **核心层（Core）**：全部为 **Rust** 交互（ECS/SoA 数据导向、纯 Rust 公开接口）
+- **设备平台层（Device/Platform）**：**C++ / Objective-C / Rust 混合调用**，分别对接底层图形驱动：
+  - **D3D12**（Windows）— C++
+  - **Metal**（Apple）— Objective-C / C++
+  - **Vulkan**（跨平台）— C/C++/Rust 绑定
+- 核心层不直接依赖任何平台图形 API；平台层通过明确 FFI/绑定桥接（`# Safety`、unsafe 收敛、接口归核心层所有）
+
+## 分支与合入策略
+
+- 每个特性开发使用**独立分支**：`feat/<特性>-<OpenSpec 变更ID>`（另有 `fix/`、`docs/`、`perf/`）
+- 以 **MR（Merge Request）** 方式合入 main，MR 必须关联对应 OpenSpec 变更（已归档）
+- **禁止直接向 main 推送**；MR 描述注明变更 ID 与影响层（core / device）
+
+## 测试与 MR 门禁
+
+- **核心函数和组件必须有对应的单元测试**（`#[test]`、模块/单元测试；组件含行为测试）
+- **每次 MR 必须保证单元测试全部通过（`cargo test` 全绿）才允许合入**——这是合入 main 的硬性前置条件，与 openspec 归档并列
+- 性能敏感代码额外需要 `cargo bench` 基线
 - 提交信息采用 conventional commits：`feat/fix/docs/refactor/perf/test/chore`
 - 详细规范工作流见技能：`.agents/skills/openspec/`（DSH 自动发现；其他 AI 工具请手动加载该技能）
