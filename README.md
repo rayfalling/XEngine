@@ -22,6 +22,12 @@ A high-performance game engine written in Rust, designed with a data-oriented, z
 
 每个 AI 代理在开发前必须先阅读 `openspec/config.yaml` 与相关 spec，确保实现与规范一致。
 
+## Agent 约束（硬性规则）
+
+- **AGENTS.md**（仓库根）— 所有 AI 代理自动加载的约束：任何变更必须走 OpenSpec 提案流程，且**必须完成 `openspec proposal archive <ID>` 归档后，才允许合入 main 分支**；同时约定 Rust 工程规范（edition 2024、数据导向设计、benchmark、conventional commits）。
+- **技能**：`.agents/skills/openspec/SKILL.md` — 完整规范工作流（提案 → 实施 → 校验 → 归档 → 合入），DSH 自动发现、无需手动加载；其他 AI 工具可按相同路径手动加载。
+- 本仓库不携带机器级 Agent preset（DSH 预设根仅在 `$DSH_HOME/.agent-presets`，不随仓库分发）；Agent 层面的全部约束由上述仓库内文件承载，确保任何环境克隆后规则一致。
+
 ## Getting Started
 
 ```powershell
