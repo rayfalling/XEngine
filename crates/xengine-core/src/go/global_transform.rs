@@ -429,4 +429,30 @@ mod tests {
             g.world = Matrix4F::from_translation(t);
         }
     }
+
+    #[test]
+    fn go_systems_coexist_in_postupdate_schedule() {
+        use crate::go::hierarchy::hierarchy_maintain_system;
+        use crate::schedule::Schedule;
+        use crate::system::Stage;
+
+        let mut scene = Scene::new();
+        let root = scene.create_go(Transform::default()).unwrap();
+        let mid = scene.create_go(Transform::default()).unwrap();
+        let _leaf = scene.create_go(Transform::default()).unwrap();
+        scene.set_parent(mid, Some(root)).unwrap();
+        // The two systems declare ordering (maintain before propagate), so the
+        // schedule builds without an unordered conflict on Parent/Children.
+        let schedule = Schedule::build(vec![
+            hierarchy_maintain_system(),
+            transform_propagate_system(),
+        ])
+        .expect("go systems must be ordered without conflict");
+        let mut schedule = schedule;
+        scene
+            .set_transform_position(root, Vector3F::new(2.0, 0.0, 0.0))
+            .unwrap();
+        schedule.run_stage(scene.world_mut(), Stage::PostUpdate);
+        assert!(!scene.world().contains::<TransformDirty>(root).unwrap());
+    }
 }
