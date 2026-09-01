@@ -453,9 +453,18 @@ impl World {
     }
 
     /// Joins two components (intersection iteration).
-    pub fn query2<A: 'static, B: 'static>(&mut self, mut f: impl FnMut(Entity, &mut A, &mut B)) {
+    ///
+    /// Returns `Err(BorrowConflict)` when both parameters name the same
+    /// component type (duplicate mutable access is rejected deterministically).
+    pub fn query2<A: 'static, B: 'static>(
+        &mut self,
+        mut f: impl FnMut(Entity, &mut A, &mut B),
+    ) -> WorldResult<()> {
         let ta = TypeId::of::<A>();
         let tb = TypeId::of::<B>();
+        if ta == tb {
+            return Err(WorldError::BorrowConflict(std::any::type_name::<A>()));
+        }
         let arch_ids: Vec<usize> = self
             .archetypes
             .iter()
@@ -480,16 +489,26 @@ impl World {
                 });
             }
         }
+        Ok(())
     }
 
     /// Joins three components (intersection iteration, <= 3 requirement).
+    ///
+    /// Returns `Err(BorrowConflict)` when any two parameters name the same
+    /// component type (duplicate mutable access is rejected deterministically).
     pub fn query3<A: 'static, B: 'static, C: 'static>(
         &mut self,
         mut f: impl FnMut(Entity, &mut A, &mut B, &mut C),
-    ) {
+    ) -> WorldResult<()> {
         let ta = TypeId::of::<A>();
         let tb = TypeId::of::<B>();
         let tc = TypeId::of::<C>();
+        if ta == tb || ta == tc {
+            return Err(WorldError::BorrowConflict(std::any::type_name::<A>()));
+        }
+        if tb == tc {
+            return Err(WorldError::BorrowConflict(std::any::type_name::<B>()));
+        }
         let arch_ids: Vec<usize> = self
             .archetypes
             .iter()
@@ -562,6 +581,7 @@ impl World {
                 );
             }
         }
+        Ok(())
     }
 
     // ── resources ────────────────────────────────────────────────────────
@@ -600,10 +620,22 @@ impl World {
     }
 
     /// Applies all queued commands in order (called at system boundaries).
-    pub fn flush_commands(&mut self) {
+    ///
+    /// Every queued command runs (order preserved); the FIRST error raised
+    /// by any command is returned, matching the synchronous API semantics.
+    pub fn flush_commands(&mut self) -> WorldResult<()> {
         let pending = self.queue.take();
+        let mut first_error = None;
         for f in pending {
-            f(self);
+            if let Err(e) = f(self)
+                && first_error.is_none()
+            {
+                first_error = Some(e);
+            }
+        }
+        match first_error {
+            Some(e) => Err(e),
+            None => Ok(()),
         }
     }
 
@@ -764,14 +796,16 @@ mod tests {
         w.iterate::<Position>(|e, p| seen.push((e, p.0)));
         assert_eq!(seen.len(), 3);
         let mut join = Vec::new();
-        w.query2::<Position, Velocity>(|e, p, v| join.push((e, p.0, v.0)));
+        w.query2::<Position, Velocity>(|e, p, v| join.push((e, p.0, v.0)))
+            .unwrap();
         assert_eq!(join.len(), 2);
         assert!(join.iter().any(|(e, _, _)| *e == a));
         assert!(join.iter().any(|(e, _, _)| *e == c));
         // remove A from a -> a disappears from join
         w.remove::<Velocity>(a).unwrap();
         let mut join2 = Vec::new();
-        w.query2::<Position, Velocity>(|e, _, _| join2.push(e));
+        w.query2::<Position, Velocity>(|e, _, _| join2.push(e))
+            .unwrap();
         assert_eq!(join2.len(), 1);
         assert_eq!(join2[0], c);
         let _ = b;
@@ -784,16 +818,19 @@ mod tests {
             .create3(Position(1.0, 1.0), Velocity(1.0, 1.0), Health(10))
             .unwrap();
         let mut count = 0;
-        w.query3::<Position, Velocity, Health>(|_, _, _, _| count += 1);
+        w.query3::<Position, Velocity, Health>(|_, _, _, _| count += 1)
+            .unwrap();
         assert_eq!(count, 1);
         w.remove::<Health>(e).unwrap();
         let mut count2 = 0;
-        w.query3::<Position, Velocity, Health>(|_, _, _, _| count2 += 1);
+        w.query3::<Position, Velocity, Health>(|_, _, _, _| count2 += 1)
+            .unwrap();
         assert_eq!(count2, 0);
         // add it back via bundle2
         w.add_bundle2(e, Health(5), Script(0)).unwrap();
         let mut count3 = 0;
-        w.query3::<Position, Velocity, Health>(|_, _, _, _| count3 += 1);
+        w.query3::<Position, Velocity, Health>(|_, _, _, _| count3 += 1)
+            .unwrap();
         assert_eq!(count3, 1);
     }
 
@@ -825,11 +862,39 @@ mod tests {
         };
         // Nothing applied yet.
         assert_eq!(w.entity_count(), 0);
-        w.flush_commands();
+        w.flush_commands().unwrap();
         assert_eq!(w.entity_count(), 1);
         assert!(w.contains::<Position>(first).unwrap());
         assert!(w.contains::<Velocity>(first).unwrap());
         assert!(!w.contains_entity(second));
+    }
+
+    #[test]
+    fn commands_propagate_errors_on_flush() {
+        let mut w = World::new();
+        let stale = {
+            let e = w.create1(Position(1.0, 1.0)).unwrap();
+            w.destroy(e).unwrap();
+            e
+        };
+        {
+            let mut cmds = w.commands();
+            cmds.remove::<Position>(stale); // stale -> Err(StaleEntity)
+        }
+        let err = w.flush_commands().unwrap_err();
+        assert!(matches!(err, WorldError::StaleEntity));
+    }
+
+    #[test]
+    fn query_same_type_is_rejected_deterministically() {
+        let mut w = World::new();
+        w.create1(Position(0.0, 0.0)).unwrap();
+        let err = w.query2::<Position, Position>(|_, _, _| {}).unwrap_err();
+        assert!(matches!(err, WorldError::BorrowConflict(_)));
+        let err = w
+            .query3::<Position, Velocity, Position>(|_, _, _, _| {})
+            .unwrap_err();
+        assert!(matches!(err, WorldError::BorrowConflict(_)));
     }
 
     #[test]
