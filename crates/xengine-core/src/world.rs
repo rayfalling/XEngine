@@ -6,6 +6,7 @@ use std::mem::ManuallyDrop;
 
 use crate::archetype::Archetype;
 use crate::command::{CommandQueue, Commands};
+use crate::component::ComponentHooks;
 use crate::entity::{Entity, EntityAllocator};
 use crate::error::{WorldError, WorldResult};
 use crate::registry::{ComponentDescriptor, ComponentRegistry};
@@ -29,6 +30,9 @@ pub struct World {
     slots: Vec<Slot>,
     resources: HashMap<TypeId, Box<dyn Any>>,
     queue: CommandQueue,
+    /// Single-threaded lifecycle-context pointer forwarded to component
+    /// hooks. `None` means "no context bound": hooks are skipped entirely.
+    hook_context: Option<*mut ()>,
 }
 
 impl Default for World {
@@ -48,12 +52,40 @@ impl World {
             slots: Vec::new(),
             resources: HashMap::new(),
             queue: CommandQueue::default(),
+            hook_context: None,
         }
     }
 
     /// Explicitly registers a component type. Duplicate registration errors.
     pub fn register<T: 'static>(&mut self, scriptable: bool) -> WorldResult<()> {
         self.registry.register::<T>(scriptable)
+    }
+
+    /// Explicitly registers a component type together with lifecycle hooks.
+    /// Duplicate registration errors and leaves the first registration (and
+    /// its hooks) untouched.
+    pub fn register_component_meta<T: 'static>(
+        &mut self,
+        hooks: ComponentHooks,
+    ) -> WorldResult<()> {
+        self.registry.register_component_meta::<T>(hooks)
+    }
+
+    /// Whether a component type is registered in the registry.
+    pub fn is_registered<T: 'static>(&self) -> bool {
+        self.registry.descriptor_of::<T>().is_some()
+    }
+
+    /// Binds the single-threaded lifecycle-context pointer handed verbatim to
+    /// every registered component hook (`on_add` / `on_remove`).
+    ///
+    /// The context must point at a stable, non-moving object (e.g. a
+    /// `Pin<Box<Scene>>` heap allocation) that stays valid for the whole world
+    /// lifetime and is only mutated from the single thread driving the world.
+    /// When no context is bound the hooks are skipped (so the GO layer can
+    /// guarantee hooks only fire once a `Scene` exists and is bound).
+    pub fn bind_hook_context(&mut self, ctx: *mut ()) {
+        self.hook_context = Some(ctx);
     }
 
     // ── entity validity ──────────────────────────────────────────────────
@@ -220,6 +252,8 @@ impl World {
         let new_types = self.ordered_types(self.archetypes[at].types(), Some(t), None);
         let nid = self.archetype_id_for(&new_types);
         let value = ManuallyDrop::new(value);
+        let desc = self.registry.descriptor_of::<T>();
+        let ctx = self.hook_context;
         let (old, new) = get_two_mut(&mut self.archetypes, at, nid);
         let mut sources: Vec<Vec<u8>> = Vec::with_capacity(new_types.len());
         for ty in &new_types {
@@ -249,6 +283,16 @@ impl World {
         }
         self.slots[idx].archetype = Some(nid);
         self.slots[idx].row = target_row;
+        // Fire on_add now that the value is live in the (new) archetype.
+        if let (Some(desc), Some(ctx)) = (desc, ctx)
+            && let Some(on_add) = desc.hooks.and_then(|h| h.on_add)
+        {
+            let arch_ref = &self.archetypes[nid];
+            if let Some(c) = arch_ref.column_index(&t) {
+                let ptr = arch_ref.columns[c].get_ptr(target_row as usize);
+                on_add(ptr as *mut u8, ctx);
+            }
+        }
         Ok(())
     }
 
@@ -281,6 +325,8 @@ impl World {
         }
         let new_types = self.ordered_types(self.archetypes[at].types(), None, Some(t));
         let nid = self.archetype_id_for(&new_types);
+        let desc = self.registry.descriptor_of::<T>();
+        let ctx = self.hook_context;
         let (old, new) = get_two_mut(&mut self.archetypes, at, nid);
         let mut sources: Vec<Vec<u8>> = Vec::with_capacity(new_types.len());
         for ty in &new_types {
@@ -293,6 +339,13 @@ impl World {
         // Safety: every source matches the target column's descriptor.
         unsafe { new.push_row(entity.index(), &ptrs) };
         let drop_col = old.column_index(&t);
+        // Fire on_remove BEFORE the value is dropped inside remove_row_migrate.
+        if let (Some(desc), Some(ctx)) = (desc, ctx)
+            && let Some(on_remove) = desc.hooks.and_then(|h| h.on_remove)
+        {
+            let ptr = old.columns[drop_col.unwrap()].get_ptr(row);
+            on_remove(ptr as *mut u8, ctx);
+        }
         let moved = unsafe { old.remove_row_migrate(row, drop_col) };
         if let Some(m) = moved {
             self.slots[m as usize].row = row as u32;
@@ -308,9 +361,24 @@ impl World {
         if !self.valid(entity) {
             return Ok(()); // idempotent
         }
+        let ctx = self.hook_context;
         let idx = entity.index() as usize;
         let at = self.slots[idx].archetype.unwrap();
         let row = self.slots[idx].row as usize;
+        // Fire on_remove once per component, before remove_row drops them.
+        if let Some(ctx) = ctx {
+            let arch_ref = &self.archetypes[at];
+            for ci in 0..arch_ref.columns.len() {
+                if let Some(on_remove) = arch_ref.columns[ci]
+                    .descriptor()
+                    .hooks
+                    .and_then(|h| h.on_remove)
+                {
+                    let ptr = arch_ref.columns[ci].get_ptr(row);
+                    on_remove(ptr as *mut u8, ctx);
+                }
+            }
+        }
         let moved = self.archetypes[at].remove_row(row);
         if let Some(m) = moved {
             self.slots[m as usize].row = row as u32;
@@ -329,7 +397,24 @@ impl World {
             .filter(|(_, s)| s.archetype.is_some())
             .map(|(i, _)| i as u32)
             .collect();
+        let ctx = self.hook_context;
         for arch in &mut self.archetypes {
+            // Fire on_remove once per live value, before drop_all drops them.
+            if let Some(ctx) = ctx {
+                for ci in 0..arch.columns.len() {
+                    if let Some(on_remove) = arch.columns[ci]
+                        .descriptor()
+                        .hooks
+                        .and_then(|h| h.on_remove)
+                    {
+                        let n = arch.len();
+                        for row in 0..n {
+                            let ptr = arch.columns[ci].get_ptr(row);
+                            on_remove(ptr as *mut u8, ctx);
+                        }
+                    }
+                }
+            }
             arch.drop_all();
         }
         for slot in &mut self.slots {
@@ -389,6 +474,53 @@ impl World {
         let idx = entity.index() as usize;
         let arch = &self.archetypes[self.slots[idx].archetype.unwrap()];
         Ok(arch.has(&TypeId::of::<T>()))
+    }
+
+    // ── location accessors (GoHandle O(1) path, crate-internal) ────────────
+
+    /// The `(archetype_id, row)` locating the live entity, or `None` when the
+    /// handle is stale. O(1).
+    pub(crate) fn location_of(&self, entity: Entity) -> Option<(usize, u32)> {
+        if !self.valid(entity) {
+            return None;
+        }
+        let idx = entity.index() as usize;
+        Some((self.slots[idx].archetype.unwrap(), self.slots[idx].row))
+    }
+
+    /// The current generation of the entity's slot, or `None` once the slot is
+    /// unwritten. O(1).
+    pub(crate) fn live_generation(&self, entity: Entity) -> Option<u32> {
+        let idx = entity.index() as usize;
+        if idx >= self.slots.len() {
+            return None;
+        }
+        Some(self.slots[idx].generation)
+    }
+
+    /// Shared access to a component at an exact `(arch, row)` position, without
+    /// a slot lookup. O(1).
+    pub(crate) fn get_at<T: 'static>(&self, arch: usize, row: usize) -> Option<&T> {
+        let arch_ref = self.archetypes.get(arch)?;
+        let c = arch_ref.column_index(&TypeId::of::<T>())?;
+        if row >= arch_ref.len() {
+            return None;
+        }
+        // Safety: `row` is a live position in the same archetype; the column
+        // value is a `T` and the borrow is shared for the returned reference.
+        Some(unsafe { &*(arch_ref.columns[c].get_ptr(row) as *const T) })
+    }
+
+    /// Mutable access to a component at an exact `(arch, row)` position,
+    /// without a slot lookup. O(1).
+    pub(crate) fn get_mut_at<T: 'static>(&mut self, arch: usize, row: usize) -> Option<&mut T> {
+        let arch_ref = self.archetypes.get_mut(arch)?;
+        let c = arch_ref.column_index(&TypeId::of::<T>())?;
+        if row >= arch_ref.len() {
+            return None;
+        }
+        // Safety: `&mut self` gives exclusivity; the column value is a `T`.
+        Some(unsafe { &mut *(arch_ref.columns[c].get_mut_ptr(row) as *mut T) })
     }
 
     /// Number of live entities.
@@ -905,5 +1037,190 @@ mod tests {
         // Same lifecycle semantics as native components.
         assert_eq!(w.get::<Script>(e).unwrap(), Some(&Script(5)));
         w.destroy(e).unwrap();
+    }
+
+    // ── component hook lifecycle (core-ecs) ────────────────────────────────
+
+    mod hooks {
+        use super::*;
+        use crate::component::ComponentHooks;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        #[derive(Debug, PartialEq)]
+        struct Tracked(u32);
+        #[derive(Debug, PartialEq)]
+        struct Other(u32);
+
+        /// Per-test hook state carried through the bound context pointer.
+        struct HookCounter {
+            add: AtomicUsize,
+            remove: AtomicUsize,
+        }
+        impl HookCounter {
+            fn new() -> Self {
+                Self {
+                    add: AtomicUsize::new(0),
+                    remove: AtomicUsize::new(0),
+                }
+            }
+            /// A stable context pointer used only to route the counters.
+            fn ctx(&self) -> *mut () {
+                self as *const Self as *mut ()
+            }
+        }
+
+        fn make_hooks() -> ComponentHooks {
+            // Safety: the ctx pointer bound by each test points at a live
+            // `HookCounter`; the hooks read its atomics.
+            fn on_add(_: *mut u8, ctx: *mut ()) {
+                let c = unsafe { &*(ctx as *const HookCounter) };
+                c.add.fetch_add(1, Ordering::SeqCst);
+            }
+            fn on_remove(_: *mut u8, ctx: *mut ()) {
+                let c = unsafe { &*(ctx as *const HookCounter) };
+                c.remove.fetch_add(1, Ordering::SeqCst);
+            }
+            ComponentHooks {
+                on_add: Some(on_add),
+                on_remove: Some(on_remove),
+            }
+        }
+
+        #[test]
+        fn add_remove_destroy_fire_once() {
+            let counter = HookCounter::new();
+            let mut w = World::new();
+            w.register_component_meta::<Tracked>(make_hooks()).unwrap();
+            w.bind_hook_context(counter.ctx());
+            let e = w.create1(Tracked(1)).unwrap();
+            assert_eq!(counter.add.load(Ordering::SeqCst), 1, "on_add fires once");
+            assert_eq!(counter.remove.load(Ordering::SeqCst), 0);
+            w.remove::<Tracked>(e).unwrap();
+            assert_eq!(
+                counter.remove.load(Ordering::SeqCst),
+                1,
+                "on_remove fires once"
+            );
+            assert_eq!(counter.add.load(Ordering::SeqCst), 1);
+            w.add(e, Tracked(2)).unwrap();
+            assert_eq!(counter.add.load(Ordering::SeqCst), 2, "re-add fires on_add");
+            w.destroy(e).unwrap();
+            assert_eq!(
+                counter.remove.load(Ordering::SeqCst),
+                2,
+                "destroy fires on_remove once"
+            );
+        }
+
+        #[test]
+        fn migration_does_not_fire_for_moved_components() {
+            let counter = HookCounter::new();
+            let mut w = World::new();
+            w.register_component_meta::<Tracked>(make_hooks()).unwrap();
+            w.bind_hook_context(counter.ctx());
+            let e = w.create1(Tracked(1)).unwrap();
+            assert_eq!(counter.add.load(Ordering::SeqCst), 1);
+            // Adding a second (hook-less) component migrates Tracked bitwise.
+            w.add(e, Other(9)).unwrap();
+            assert_eq!(
+                counter.add.load(Ordering::SeqCst),
+                1,
+                "adding Other must not re-fire Tracked's on_add"
+            );
+            assert_eq!(
+                counter.remove.load(Ordering::SeqCst),
+                0,
+                "migrated (kept) component must not fire on_remove"
+            );
+            // Removing Other migrates Tracked again.
+            w.remove::<Other>(e).unwrap();
+            assert_eq!(counter.add.load(Ordering::SeqCst), 1);
+            assert_eq!(counter.remove.load(Ordering::SeqCst), 0);
+            // Removing the tracked component itself fires on_remove exactly once.
+            w.remove::<Tracked>(e).unwrap();
+            assert_eq!(counter.remove.load(Ordering::SeqCst), 1);
+        }
+
+        #[test]
+        fn clear_fires_on_remove_for_every_live_value() {
+            let counter = HookCounter::new();
+            let mut w = World::new();
+            w.register_component_meta::<Tracked>(make_hooks()).unwrap();
+            w.bind_hook_context(counter.ctx());
+            let _ = w.create1(Tracked(1)).unwrap();
+            let _ = w.create1(Tracked(2)).unwrap();
+            let _ = w.create1(Tracked(3)).unwrap();
+            assert_eq!(counter.add.load(Ordering::SeqCst), 3);
+            assert_eq!(counter.remove.load(Ordering::SeqCst), 0);
+            w.clear();
+            assert_eq!(
+                counter.remove.load(Ordering::SeqCst),
+                3,
+                "clear fires on_remove per value"
+            );
+        }
+
+        #[test]
+        fn commands_path_fires_identically() {
+            let counter = HookCounter::new();
+            let mut w = World::new();
+            w.register_component_meta::<Tracked>(make_hooks()).unwrap();
+            w.bind_hook_context(counter.ctx());
+            let e = {
+                let mut cmds = w.commands();
+                cmds.create1(Tracked(1))
+            };
+            assert_eq!(counter.add.load(Ordering::SeqCst), 0, "not yet flushed");
+            w.flush_commands().unwrap();
+            assert_eq!(counter.add.load(Ordering::SeqCst), 1);
+            {
+                let mut cmds = w.commands();
+                cmds.destroy(e);
+            }
+            assert_eq!(counter.remove.load(Ordering::SeqCst), 0);
+            w.flush_commands().unwrap();
+            assert_eq!(counter.remove.load(Ordering::SeqCst), 1);
+        }
+
+        #[test]
+        fn unbound_context_skips_hooks() {
+            let counter = HookCounter::new();
+            let mut w = World::new();
+            w.register_component_meta::<Tracked>(make_hooks()).unwrap();
+            // No bind_hook_context -> hooks must be skipped.
+            let _ = w.create1(Tracked(1)).unwrap();
+            assert_eq!(counter.add.load(Ordering::SeqCst), 0);
+            assert_eq!(counter.remove.load(Ordering::SeqCst), 0);
+        }
+
+        #[test]
+        fn duplicate_registration_preserves_first_hooks() {
+            let counter = HookCounter::new();
+            let mut w = World::new();
+            w.register_component_meta::<Tracked>(make_hooks()).unwrap();
+            let err = w.register::<Tracked>(false).unwrap_err();
+            assert!(matches!(err, WorldError::DuplicateRegistration(_)));
+            w.bind_hook_context(counter.ctx());
+            let e = w.create1(Tracked(1)).unwrap();
+            assert_eq!(
+                counter.add.load(Ordering::SeqCst),
+                1,
+                "first registration's hooks must survive"
+            );
+            let _ = e;
+        }
+
+        #[test]
+        fn hookless_type_zero_impact() {
+            let counter = HookCounter::new();
+            let mut w = World::new();
+            w.bind_hook_context(counter.ctx());
+            // Other is auto-registered without hooks; context is bound but the
+            // descriptor has no hooks so nothing may fire.
+            let e = w.create1(Other(5)).unwrap();
+            assert_eq!(counter.add.load(Ordering::SeqCst), 0);
+            w.destroy(e).unwrap();
+            assert_eq!(counter.remove.load(Ordering::SeqCst), 0);
+        }
     }
 }

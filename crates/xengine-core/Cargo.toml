@@ -6,6 +6,13 @@ edition.workspace = true
 [lib]
 name = "xengine_core"
 
+[dependencies]
+xengine-math = { workspace = true }
+
 [[bench]]
 name = "ecs"
+harness = false
+
+[[bench]]
+name = "go_access"
 harness = false

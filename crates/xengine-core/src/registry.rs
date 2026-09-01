@@ -3,6 +3,7 @@
 use std::any::TypeId;
 use std::collections::HashMap;
 
+use crate::component::ComponentHooks;
 use crate::error::{WorldError, WorldResult};
 
 /// Layout and lifecycle descriptor of one registered component type.
@@ -21,10 +22,12 @@ pub struct ComponentDescriptor {
     pub scriptable: bool,
     /// Drop function called for each live instance (None for no-op drops).
     pub drop_fn: Option<fn(*mut u8)>,
+    /// Optional lifecycle hooks (None for the default registration path).
+    pub hooks: Option<ComponentHooks>,
 }
 
 impl ComponentDescriptor {
-    /// Builds the descriptor for a concrete native type.
+    /// Builds the descriptor for a concrete native type (no hooks).
     pub fn of<T>(scriptable: bool) -> Self {
         Self {
             size: std::mem::size_of::<T>(),
@@ -34,6 +37,18 @@ impl ComponentDescriptor {
             align: std::mem::align_of::<T>(),
             scriptable,
             drop_fn: Some(needs_drop::<T>()),
+            hooks: None,
+        }
+    }
+
+    /// Builds the descriptor for a concrete native type carrying hooks.
+    pub fn of_with_hooks<T>(hooks: ComponentHooks) -> Self {
+        Self {
+            size: std::mem::size_of::<T>(),
+            align: std::mem::align_of::<T>(),
+            scriptable: false,
+            drop_fn: Some(needs_drop::<T>()),
+            hooks: Some(hooks),
         }
     }
 
@@ -46,6 +61,7 @@ impl ComponentDescriptor {
             align: 1,
             scriptable,
             drop_fn: None,
+            hooks: None,
         }
     }
 }
@@ -82,6 +98,20 @@ impl ComponentRegistry {
             TypeId::of::<T>(),
             std::any::type_name::<T>(),
             ComponentDescriptor::of::<T>(scriptable),
+        )
+    }
+
+    /// Registers a concrete component type together with lifecycle hooks.
+    /// Duplicate registration returns an error and leaves the existing entry
+    /// (and its hooks) untouched.
+    pub fn register_component_meta<T: 'static>(
+        &mut self,
+        hooks: ComponentHooks,
+    ) -> WorldResult<()> {
+        self.insert(
+            TypeId::of::<T>(),
+            std::any::type_name::<T>(),
+            ComponentDescriptor::of_with_hooks::<T>(hooks),
         )
     }
 
