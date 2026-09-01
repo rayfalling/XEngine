@@ -11,8 +11,8 @@
 - **WHEN** 对 `Vector3I` 调用 `length/normalize` 或 `Quaternion<f32>` 外的四元数插值
 - **THEN** 编译错误（仅在数值 trait bound 内提供），i32 变体保留分量运算与布局
 
-### Requirement: 数学约定（D3D 风格，吸收 NeoX/DirectXMath）
-所有矩阵 MUST 为**行主序**；向量变换 MUST 为**行向量×矩阵**；`transform_point(v, A·B)` MUST 等价于先应用 A 后应用 B；坐标系 MUST 为**左手系**且 identity 旋转下 forward=+Z；四元数分量 MUST 为 (x,y,z,w)（w 后置）；欧拉角转换 MUST 使用 **YXZ** 顺序并与 DXMath `XMQuaternionRotationRollPitchYaw(pitch, yaw, roll)` 语义一致（绕 Y→X→Z）。`Matrix4` 平移 MUST 落在 `m[3][0..2]`。
+### Requirement: 数学约定（D3D 风格，D3D 风格）
+所有矩阵 MUST 为**行主序**；向量变换 MUST 为**行向量×矩阵**；`transform_point(v, A·B)` MUST 等价于先应用 A 后应用 B；坐标系 MUST 为**左手系**且 identity 旋转下 forward=+Z；四元数分量 MUST 为 (x,y,z,w)（w 后置）；欧拉角转换 MUST 使用 **YXZ** 顺序并与 D3D 系标准欧拉约定一致（绕 Y→X→Z 内旋，pitch/yaw/roll）。`Matrix4` 平移 MUST 落在 `m[3][0..2]`。
 
 #### Scenario: 行向量×矩阵方向
 - **WHEN** `v = transform_point(v0, A·B)`
@@ -28,7 +28,7 @@
 
 #### Scenario: 四元数与欧拉
 - **WHEN** `QuaternionF::from_euler_yxz(p, y, r)` 后 `to_mat4`/`to_mat3`
-- **THEN** 与 DXMath `XMQuaternionRotationRollPitchYaw` 对应矩阵逐元素一致（< 1e-6）
+- **THEN** 与 D3D 系标准 YXZ 欧拉约定对应矩阵逐元素一致（< 1e-6）
 
 ### Requirement: 布局与对齐（FFI 契约）
 所有公开数学类型 MUST 为 `#[repr(C)]`。默认对齐 MUST 为 16 字节（`Vector2<T>` 为 8）。`cargo feature "xmath_align64"`（默认关闭，仅 `xengine-math`）MUST 将全类型对齐切换为 64 字节。两套布局 MUST 均有 `size_of/align_of` 与关键字段偏移单测锁定（`Matrix4` 平移行、`Quaternion` w 位置、`AABB` min/max）。文档 MUST 说明：启用 64B 时 C++ 镜像头须同步布局。
@@ -53,7 +53,7 @@
 - **THEN** 前向量为 target-eye 归一化（+Z 语义），相机空间 forward=+Z
 
 ### Requirement: 数值安全语义
-向量规定零向量 `normalize_or_zero` MUST 返回零向量（不产生 NaN）；`approx_eq` MUST 使用 epsilon 比较；`is_finite` MUST 正确判定；`mul_vec4` 透视除法 w=0 MUST 与 DXMath 一致（透传，不 panic）。
+向量规定零向量 `normalize_or_zero` MUST 返回零向量（不产生 NaN）；`approx_eq` MUST 使用 epsilon 比较；`is_finite` MUST 正确判定；`mul_vec4` 透视除法 w=0 MUST 透传（不 panic）。
 
 #### Scenario: 零向量归一化
 - **WHEN** `normalize_or_zero((0,0,0))`
@@ -61,7 +61,7 @@
 
 #### Scenario: 透视除零
 - **WHEN** `mul_vec4((1,2,3,0), m)` 计算 w=0 分量
-- **THEN** 结果与 DXMath 一致（inf 透传），不 panic
+- **THEN** 结果为 inf 透传，不 panic
 
 ### Requirement: SIMD 预留（公开布局隔离）
 公开结构体字段 MUST 即布局契约；SIMD 实现 MUST 只发生在 crate 内部 `kernel` 模块（显式 load/store 包围），MUST NOT 修改公开字段序或对齐（除非布局变更随 feature 明示）；后续 SIMD 启用 MUST 保持公开行为与标量实现一致（单测锁定）。

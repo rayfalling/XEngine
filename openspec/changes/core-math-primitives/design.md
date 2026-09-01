@@ -1,6 +1,6 @@
 ## Context
 
-GO 层（Transform）与渲染层从字段定义到 FFI 消费都依赖数学基元；此前的探索：ECS/帧调度已归档（core-ecs/core-frame），渲染层明确"先规划 GO/Component 再实现"。本变更定义 `core-math` 能力：类型 + 约定 + 布局契约。参考实现来自解析 NeoX 数学体系（`math3d` conan 1.1.6 自研包、cocos2d-x math、`nxmath3d` 反射桥接层）与 DirectXMath 语义。
+GO 层（Transform）与渲染层从字段定义到 FFI 消费都依赖数学基元；此前的探索：ECS/帧调度已归档（core-ecs/core-frame），渲染层明确"先规划 GO/Component 再实现"。本变更定义 `core-math` 能力：类型 + 约定 + 布局契约。参考 D3D 系业界标准约定（与主流游戏引擎数学库的通用形态一致）。
 
 ## Goals / Non-Goals
 
@@ -17,23 +17,22 @@ GO 层（Transform）与渲染层从字段定义到 FFI 消费都依赖数学基
 - 设备层（D3D12/Metal/Vulkan）C++ 镜像头与消费：后续渲染层变更
 - SIMD 实现（本变更仅预留 kernel 接口；由 benchmark 驱动）
 - Phase 2 运算：`Plane`/`Frustum`/`Ray` 相交/`Float16`/`Orthogonalize`/`AddScaled` 等（渲染层变更按需引入）
-- 反射/序列化耦合（数学库零反射依赖，参照 nxmath3d 解耦做法：上层做桥接）
+- 反射/序列化耦合（数学库零反射依赖，解耦做法：反射/桥接放置在上层）
 - 运行时动态类型（脚本层用 enum/对象包装，数学核心保持静态实例化）
 
 ## Decisions
 
 ### D1 泛型 vs 具体类型（用户决策：用泛型 + 完全限定别名）
-实现为 `Vector3<T>` 等泛型 struct（Rust 泛型 = C++ 模板对应物，编译期 monomorphization），公开别名 `pub type Vector3F = Vector3<f32>` 等（对应 NeoX `_Vector3<T>` + typedef）。数值操作经 crate 内置 `trait FloatNum`（对应 C++ `is_same_v<float>` SFINAE；`min_specialization` 不稳定故不特化）：`impl<T: FloatNum> Vector3<T>` 提供 length/normalize；i32 变体只布局/分量运算。**备选**：宏生成具体类型（无 trait 成本但双份实现难维护）、具体类型手写（×）、立即引入 num-traits 依赖（违反零依赖，×）。
+实现为 `Vector3<T>` 等泛型 struct（Rust 泛型 = C++ 模板对应物，编译期 monomorphization），公开别名 `pub type Vector3F = Vector3<f32>` 等（对应业界 template + typedef 模式）。数值操作经 crate 内置 `trait FloatNum`（对应 C++ `is_same_v<float>` SFINAE；`min_specialization` 不稳定故不特化）：`impl<T: FloatNum> Vector3<T>` 提供 length/normalize；i32 变体只布局/分量运算。**备选**：宏生成具体类型（无 trait 成本但双份实现难维护）、具体类型手写（×）、立即引入 num-traits 依赖（违反零依赖，×）。
 
 ### D2 行主序/行向量/左手/forward=+Z（用户决策）
-与 NeoX `math3d`（D3D 系）对齐：行主序、`transform_point` 行向量左乘、左手系 forward=+Z、四元数 w 后置、欧拉 YXZ ≡ DXMath `RollPitchYaw`、`perspective_lh` 深度 0..1。**备选**：列主序右手（Vulkan 原生，D3D12 主平台需适配，×）。行/列消费差异用 `to_col_major/from_col_major` 显式互转吸收（Vulkan 适配留给设备层）。
+与 D3D 系约定对齐：行主序、`transform_point` 行向量左乘、左手系 forward=+Z、四元数 w 后置、欧拉 YXZ ≡ D3D 系标准 roll/pitch/yaw 内旋顺序、`perspective_lh` 深度 0..1。**备选**：列主序右手（Vulkan 原生，D3D12 主平台需适配，×）。行/列消费差异用 `to_col_major/from_col_major` 显式互转吸收（Vulkan 适配留给设备层）。
 
 ### D3 布局对齐：repr(C) + 16B 默认 / 64B feature（用户决策）
-默认 `align(16)`（SSE/AVX 常量缓冲）；`xmath_align64` feature（默认关、仅本 crate）→ `align(64)`（对齐 NeoX `NEOX` 宏 `Math3dAlign64`）。**不默认 64B**：数组 stride 变大、缓存利用率下降；64B 仅高对齐需求场景。两套布局都单测锁定；文档明示 C++ 镜像同步义务。`Vec2` 用 `align(8)`（非热路径布局）—— 不，统一由 cfg 决定：设计上所有类型 16B/64B 同开关，`Vector2<T>` 例外保持 8/64？**简化**：`Vector2<T>` align(8)（64B feature 下也 8？还是 64？）。统一开关最不易错：Vector2 也 16/64（浪费 0）。**决定**：除 `Vector2<T>` 固定 `align(8)` 外（2D 非热路径，feature 不影响），其余类型随 feature。嗯——统一性 & 单测简单性……用户要求"单独针对数学库启用"，未指定 Vector2。为避免两态复杂，**设计：全部类型随 feature 同切 16/64；Vector2 在 16B 模式下为 8？** 不，repr(align) 条件属性无法让 Vector2 不同（可以：Vector2 固定使用 cfg_attr 同 feature）。**决策**：Vector2 与其他一致（16B 时 align(16)？浪费浪费 14B——Vec2 用途少，可接受？不优雅。）
-最终决定（写 design）：`Vector2<T>` 固定 `align(8)`（布局锁定：16B 模式下 size=8/align=8；64B feature 下仍为 align(8)，因为 2D 不进 3D 热路径/SIMD——但"全部类型随 feature"会否让用户不满？用户说 64B feature "单独针对数学库"，没说全部类型。我定：**除 Vector2 固定 8 外，其余类型随 feature 在 16/64 切换**，feature 文档注明）。这在 proposal 里已写 "默认对齐 MUST 为 16 字节（Vector2<T> 为 8）" — OK 已声明。
+默认 `align(16)`（SSE/AVX 常量缓冲）；`xmath_align64` feature（默认关、仅本 crate）→ `align(64)`（对齐业界"可选高对齐"配置模式）。**不默认 64B**：数组 stride 变大、缓存利用率下降；64B 仅高对齐需求场景。**定稿**：除 `Vector2<T>` 固定 `align(8)`（2D 非热路径）外，其余类型（Vector3/4、Quaternion、Matrix3/4、AABB）随 feature 在 16/64 切换；两套布局均单测锁定 size/align/偏移；文档明示 C++ 镜像同步义务。
 
 ### D4 SIMD 预留 kernel
-公开字段=布局契约（吸取 NeoX：不把 `__m128`/XMVECTOR 融进布局；union 双访问对 FFI 无益，只需字段序一致）。crate 内部 `kernel` 模块：运算集中、显式 load/store 点；后续 SIMD 走"内部替换、公开语义与测试不变"。对齐路径（SSE 需 16B、AES/AVX512 需 64B）与 `xmath_align64` 联动预留。
+公开字段=布局契约（不把 SIMD 类型融进公开布局；union 双访问对 FFI 无益，只需字段序一致）。crate 内部 `kernel` 模块：运算集中、显式 load/store 点；后续 SIMD 走"内部替换、公开语义与测试不变"。对齐路径（SSE 需 16B、AES/AVX512 需 64B）与 `xmath_align64` 联动预留。
 
 ### D5 命名
 完全限定（不简写）：`Vector2F/Vector2I/Vector3F/Vector3I/Vector4F/Vector4I/QuaternionF/Matrix3F/Matrix4F/AABBF`。AABB 全大写（`#[allow(clippy::upper_case_acronyms)]` 于该类，保持最终命名）。
