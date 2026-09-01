@@ -42,26 +42,26 @@
 - **THEN** `align_of::<Matrix4F>()==64`（其余类型同理），偏移断言仍成立，`size_of` 为 64 的倍数
 
 ### Requirement: Phase 1 运算集
-`xengine_math` SHALL 提供以下运算（各类型）：向量（分量 ±×÷ 与标量、`dot/cross/length/length_sqr/normalize_or_zero/distance/lerp/abs/min/max/perpendicular/approx_eq/is_finite`）；四元数（`identity/from_axis_angle/from_euler_yxz/mul/dot/conjugate/inverse/rotate_vec3/slerp/nlerp/from_mat4/to_mat4/from_to`）；矩阵（`identity/zero/from_trs/from_quat/from_translation/from_scale/mul/transpose/inverse/行列式/mul_vec3/mul_vec4（含透视）/look_at_lh/perspective_lh（深度 0..1, D3D 式）/ortho_lh`）；`AABB`（`from_min_max/union/intersects/contains`）。MUST 提供常量（`ZERO/ONE/IDENTITY`）与 `Display`。
+`xengine_math` SHALL 提供以下运算（各类型）：向量（分量 ±×÷ 与标量、`dot/cross/length/length_sqr/normalize_or_zero/distance/lerp/abs/min/max/perpendicular/approx_eq/is_finite`）；四元数（`identity/from_axis_angle/from_euler_yxz/mul/dot/conjugate/inverse/rotate_vec3/slerp/nlerp/from_mat4/to_mat4/from_to`）；矩阵（`identity/zero/from_trs/from_quat/from_translation/from_scale/mul/transpose/inverse/行列式/mul_vec3（点变换）/mul_vec4（齐次，无除法）/transform_vec3（方向）/look_at_lh/perspective_lh（深度 0..1, D3D 式）/ortho_lh`）；`AABB`（`from_min_max/union/intersects/contains`）。MUST 提供常量（`ZERO/ONE/IDENTITY`）与 `Display`。
 
 #### Scenario: 投影矩阵 D3D 深度
 - **WHEN** `perspective_lh(fovy, aspect, near, far)` 构造
-- **THEN** 深度映射为 [0,1]（`m[2][2]=far/(near-far)`、`m[2][3]=-1`，行主序索引），与 D3D12 常量缓冲约定一致
+- **THEN** 深度映射为 [0,1]（行主序索引：`m[2][2]=far/(far-near)`、`m[2][3]=1`、`m[3][2]=-(near·far)/(far-near)`），与 D3D12 常量缓冲约定一致
 
 #### Scenario: 视矩阵前向
 - **WHEN** `look_at_lh(eye, target, up)` 构造
 - **THEN** 前向量为 target-eye 归一化（+Z 语义），相机空间 forward=+Z
 
 ### Requirement: 数值安全语义
-向量规定零向量 `normalize_or_zero` MUST 返回零向量（不产生 NaN）；`approx_eq` MUST 使用 epsilon 比较；`is_finite` MUST 正确判定；`mul_vec4` 透视除法 w=0 MUST 透传（不 panic）。
+向量规定零向量 `normalize_or_zero` MUST 返回零向量（不产生 NaN）；`approx_eq` MUST 使用 epsilon 比较；`is_finite` MUST 正确判定；`mul_vec4(v, m)` MUST 为齐次坐标变换 `v·M`（结果 4 分量线性组合，w 分量透传，**不执行透视除法**，w=0 不产生除零也不 panic）；点变换 `transform_point`/`mul_vec3`（隐含 w=1，含平移）与方向变换 `transform_vec3`（w=0，不含平移）语义 MUST 明确区分。
 
 #### Scenario: 零向量归一化
 - **WHEN** `normalize_or_zero((0,0,0))`
 - **THEN** 结果为 `(0,0,0)`，无 NaN
 
-#### Scenario: 透视除零
-- **WHEN** `mul_vec4((1,2,3,0), m)` 计算 w=0 分量
-- **THEN** 结果为 inf 透传，不 panic
+#### Scenario: 齐次变换 w=0 无除零
+- **WHEN** `mul_vec4((1,2,3,0), m)` 
+- **THEN** 结果为 `v·M` 的线性组合（w 分量照常参与、无除法、不 panic）；`transform_vec3` 不含平移（方向语义）而 `transform_point` 含平移（点语义）
 
 ### Requirement: SIMD 预留（公开布局隔离）
 公开结构体字段 MUST 即布局契约；SIMD 实现 MUST 只发生在 crate 内部 `kernel` 模块（显式 load/store 包围），MUST NOT 修改公开字段序或对齐（除非布局变更随 feature 明示）；后续 SIMD 启用 MUST 保持公开行为与标量实现一致（单测锁定）。
