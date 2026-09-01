@@ -25,7 +25,7 @@
 `pub type GameObject = Entity`；无包装结构；`create_go` 生成三件套实体。**概念修正（用户）：游戏对象的容器是 `Scene`（场景），不是 ECS `World`**——`Scene`（`xengine-core::go`）拥有 `World` + `scene_id` + serial 分配器；GO 生命周期/层级/传播/包装层访问全部经 Scene。`Engine`（core-frame）改为持有 `Scene`（`Pin<Box<Scene>>`），tick 与调度语义不变（系统仍 `&mut World`；Engine 内部经 scene 桥接）。**备选**：包装句柄（脚本层便利，后续脚本变更引入；核心不引）、Scene 仅作引用标记（不承载 World——否决：场景即游戏运行时容器）。
 
 ### D2 三组件字段（用户决策 + 本变更定稿）
-- `Transform { position: Vector3F, rotate: QuatF, scale: Vector3F }`（用户命名 rotate；局部 TRS；数学约定由 core-math 锁定）
+- `Transform { position: Vector3F, rotate: QuaternionF, scale: Vector3F }`（用户命名 rotate；局部 TRS；数学约定由 core-math 锁定）
 - `SceneRef { scene_id: u32, serial: u64, generation: u32 }`（原 WorldRef，**按用户概念修正改名**：Scene 的引用关系——scene_id 全局唯一、serial 场景内稳定键、generation 世代镜像）
 - `Parent { parent: Option<Entity> }`、`Children { children: Vec<Entity> }`（与 spike 基准同构）
 
@@ -36,13 +36,13 @@
 - **备选**：事件化（延迟消费 → 组件行可能已迁移，不安全，×）；钩子移出 core 由 Scene 包装（拦不住 Commands flush 路径，×）；带 `&mut World` 参数（用户否决：world 不必要传入，Scene 即上下文）
 
 ### D4 GlobalTransform 派生缓存 + dirty 标记驱动（用户决策）
-三件套之外的派生组件（传播写入，渲染采集主路径读取，避免每帧重复层级遍历）；非强制挂载。**dirty 驱动**：`TransformDirty`（marker 组件）由 Scene set API 置位；**两阶段传播**——阶段 1（顺序、读层级边）从 dirty 实体沿 Children 标记全部后代为"待重算"（父变动波及子树——即使子 local 未变）；阶段 2 **按 Entity 并行**（固定数量 chunk 拆分，SoA 列按 chunk 切分）：每个待重算实体**独立遍历自身祖先链的 local TRS 累乘** `world(e)=trs(root)·…·trs(parent)·trs(e)`（行向量约定），写入自己的 `GlobalTransform` 并重置自身 dirty——**无先后顺序依赖**（祖先即使同时 dirty 也无需先算完；纯只读父链 + 写自身行），符合 SoA 并行快速计算要求。公共字段保留 pub（直写需显式 mark，文档契约；快照兜底留后续独立变更）。**并行接入点**：单线程首版阶段 2 为串行循环，但接口与 chunk 化并行一致（后续调度层并行化，行为等价：每实体恰一次写入、恰一次重置）。**备选**：先父后子/按子树分块串行传播（用户否决——依赖顺序、无法按实体并行、不符合 SoA）；全量逐帧重算（×）；快照比较兜底（后续）。
+三件套之外的派生组件（传播写入，渲染采集主路径读取，避免每帧重复层级遍历）；非强制挂载。**dirty 驱动**：`TransformDirty`（marker 组件）由 Scene set API 置位；**两阶段传播**——阶段 1（顺序、读层级边）从 dirty 实体沿 Children 标记全部后代为"待重算"（父变动波及子树——即使子 local 未变）；阶段 2 **按 Entity 并行**（固定数量 chunk 拆分，SoA 列按 chunk 切分）：每个待重算实体**独立遍历自身祖先链的 local TRS 累乘** `world(e)=trs(e)·…·trs(parent)·trs(root)`（行向量约定），写入自己的 `GlobalTransform` 并重置自身 dirty——**无先后顺序依赖**（祖先即使同时 dirty 也无需先算完；纯只读父链 + 写自身行），符合 SoA 并行快速计算要求。公共字段保留 pub（直写需显式 mark，文档契约；快照兜底留后续独立变更）。**并行接入点**：单线程首版阶段 2 为串行循环，但接口与 chunk 化并行一致（后续调度层并行化，行为等价：每实体恰一次写入、恰一次重置）。**备选**：先父后子/按子树分块串行传播（用户否决——依赖顺序、无法按实体并行、不符合 SoA）；全量逐帧重算（×）；快照比较兜底（后续）。
 
 ### D5 destroy 语义（用户决策：默认级联）
 GO 层 `destroy(entity)` **默认级联**销毁整棵子树（深度优先，每实体恰一次——杜绝"树中间删除产生孤立节点"的管理问题）；`detach(entity)` 为显式剥离（实体与子树保留、转根）。ECS 级 `World::destroy` 单实体语义不变（core-ecs 已归档）。**备选**：默认剥离（用户已否决——中间节点删除产生孤立节点管理问题）。
 
 ### D6 包装层（性能决策：spike 数据支撑）
-`GoHandle { entity, cache: Option<GoLoc { arch, row, gen }> }`；访问 = 校验（generation 比对 + arch/row 新鲜度）→ 命中 O(1) 经 World 内部位置接口取值 / 未命中重解析。禁止持裸指针（bench E 档证明 1% 结构变化即抹平收益且 unsafe）。公开：`scene.go_view(&mut self, handle) -> Result<GoView>`（借用量）。脚本层绑定后续；本变更交付契约与 Rust 侧实现。
+`GoHandle { entity, cache: Option<GoLoc { arch, row, generation }> }`；访问 = 校验（generation 比对 + arch/row 新鲜度）→ 命中 O(1) 经 World 内部位置接口取值 / 未命中重解析。禁止持裸指针（bench E 档证明 1% 结构变化即抹平收益且 unsafe）。公开：`scene.go_view(&mut self, handle) -> Result<GoView>`（借用量）。脚本层绑定后续；本变更交付契约与 Rust 侧实现。
 
 ### D7 层级维护与传播时点
 HierarchyMaintain / TransformPropagate 挂 PostUpdate（游戏逻辑更新后、渲染采集前）；传播范围：无 Parent 的实体为根集合，递归 Children；环检测在维护操作时（设父/重挂）拒绝。层级信息读取均由组件持有（无外部边表：与 ECS 生命周期自动同步，见决策轴②备选 C 否决理由——之前讨论定 Bevy 式 Parent/Children 组件化）。

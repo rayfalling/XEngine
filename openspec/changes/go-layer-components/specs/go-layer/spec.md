@@ -8,7 +8,7 @@
 - **THEN** 返回 Entity；该实体 `contains::<Transform/SceneRef/Parent>` 全真；`Parent.parent` 为 None；`SceneRef` 自动填充（见下）
 
 ### Requirement: Transform 组件
-`Transform` 为实现 `Component` 的组件：MUST 含字段 `position: Vector3F`（`xengine_math`）、`rotate: QuatF`、`scale: Vector3F`，表示**局部** TRS（相对父节点）。缩放 MAY 为负数（允许镜像）。`Transform::default()` MUST 为 `position=ZERO`、`rotate=Identity`、`scale=ONE`。本地变换写入 MUST 经 Scene set API（`set_go_transform`/`set_transform_position/rotation/scale`）或显式 `mark_transform_dirty`，写入后置位 `TransformDirty`（见传播要求）。
+`Transform` 为实现 `Component` 的组件：MUST 含字段 `position: Vector3F`（`xengine_math`）、`rotate: QuaternionF`、`scale: Vector3F`，表示**局部** TRS（相对父节点）。缩放 MAY 为负数（允许镜像）。`Transform::default()` MUST 为 `position=ZERO`、`rotate=Identity`、`scale=ONE`。本地变换写入 MUST 经 Scene set API（`set_go_transform`/`set_transform_position/rotation/scale`）或显式 `mark_transform_dirty`，写入后置位 `TransformDirty`（见传播要求）。
 
 #### Scenario: 默认值
 - **WHEN** `Transform::default()`
@@ -41,7 +41,7 @@
 - **THEN** 返回 `Err(HierarchyCycle)`，两侧状态回滚到原先
 
 ### Requirement: 变换传播（dirty 标记驱动，按实体并行）
-`GlobalTransform { world: Matrix4F }` 为派生缓存组件（非三件套、非必需）。本地变换的写入 MUST 经 Scene set API（`set_go_transform(e, f)` / `set_transform_position/rotation/scale`）或 `mark_transform_dirty(e)`（直写字段后的显式标记），写入后 MUST 置位 `TransformDirty`（marker 组件）。`TransformPropagate`（PostUpdate）MUST 按下述两阶段执行：**阶段 1（顺序、读层级边）**：从全部 dirty 实体出发沿 Children 标记其**全部后代**为"待重算"（父变动 MUST 波及整棵子树——即使子 local 未变），产出待重算实体集；**阶段 2（并行、按实体固定数量 chunk 拆分）**：每个待重算实体 SHALL **独立遍历自身祖先链的 local TRS** 并以行向量约定累乘 `world(e) = trs(root)·…·trs(parent)·trs(e)` 写入自身 `GlobalTransform`（不依赖祖先的 GlobalTransform 已更新、无先后顺序约束），随后重置自身 dirty 标记。每个实体只写自己的 GlobalTransform（SoA 列按 chunk 切分，无写冲突）。无 `GlobalTransform` 的实体跳过写入（不报错）。未标记的直写字段变更 MUST 在文档中声明为"需显式 `mark_transform_dirty`"，传播系统不做快照兜底。遍历 MUST 把无 Parent 实体视为根集合。单线程首版（阶段 2 为串行循环，接口与并行接入点一致）；并行按实体 chunk 化接入点为后续调度层，行为 MUST 与单线程一致。
+`GlobalTransform { world: Matrix4F }` 为派生缓存组件（非三件套、非必需）。本地变换的写入 MUST 经 Scene set API（`set_go_transform(e, f)` / `set_transform_position/rotation/scale`）或 `mark_transform_dirty(e)`（直写字段后的显式标记），写入后 MUST 置位 `TransformDirty`（marker 组件）。`TransformPropagate`（PostUpdate）MUST 按下述两阶段执行：**阶段 1（顺序、读层级边）**：从全部 dirty 实体出发沿 Children 标记其**全部后代**为"待重算"（父变动 MUST 波及整棵子树——即使子 local 未变），产出待重算实体集；**阶段 2（并行、按实体固定数量 chunk 拆分）**：每个待重算实体 SHALL **独立遍历自身祖先链的 local TRS** 并以行向量约定累乘 `world(e) = trs(e)·…·trs(parent)·trs(root)`（行向量：最右因子最先作用） 写入自身 `GlobalTransform`（不依赖祖先的 GlobalTransform 已更新、无先后顺序约束），随后重置自身 dirty 标记。每个实体只写自己的 GlobalTransform（SoA 列按 chunk 切分，无写冲突）。无 `GlobalTransform` 的实体跳过写入（不报错）。未标记的直写字段变更 MUST 在文档中声明为"需显式 `mark_transform_dirty`"，传播系统不做快照兜底。遍历 MUST 把无 Parent 实体视为根集合。单线程首版（阶段 2 为串行循环，接口与并行接入点一致）；并行按实体 chunk 化接入点为后续调度层，行为 MUST 与单线程一致。
 
 #### Scenario: 级联重算与重置
 - **WHEN** 根 local 变动（set API）→ `TransformDirty` 置位，一帧后读取
@@ -53,7 +53,7 @@
 
 #### Scenario: 祖先链独立计算
 - **WHEN** 树中间节点与叶子同时 dirty（阶段 2 按实体并行计算）
-- **THEN** 叶子结果等于 `trs(root)·…·trs(leaf)` 链路累乘——与祖先是否先算无关，逐实体独立成立；每实体恰一次写入、恰一次重置
+- **THEN** 叶子结果等于 `trs(leaf)·…·trs(root)` 链路累乘——与祖先是否先算无关，逐实体独立成立；每实体恰一次写入、恰一次重置
 
 #### Scenario: 未标记直写
 - **WHEN** 直接写 `Transform` 公共字段且未调用标记 API

@@ -12,7 +12,7 @@
   - **`Scene` = 游戏对象的运行时容器**（`xengine-core::go`）：`Scene { world: World, scene_id: u32, serial_allocator, … }`；场景拥有 ECS World；`Scene::new() -> Pin<Box<Scene>>`（固定地址供钩子上下文引用）；**GO 全部生命周期/访问 API 经 Scene**（`create_go` / `destroy` / `detach` / `add_component` / `remove_component` / `go_view` / 层级 / 传播挂钩）
   - `Engine`（core-frame）改为持有 Scene：`Engine::new(scene: Pin<Box<Scene>>, schedule, mode)`；tick 行为与既有调度语义不变（系统仍以 `&mut World` 运行，Engine 内部经 scene 桥接；钩子在 flush/帧边界照常触发）
   - GO = `Entity` 别名；`Scene::create_go` 生成三组件套餐
-  - `Transform` 组件：`position: Vector3F`、`rotate: QuatF`、`scale: Vector3F`（local TRS，依赖 `xengine_math`）
+  - `Transform` 组件：`position: Vector3F`、`rotate: QuaternionF`、`scale: Vector3F`（local TRS，依赖 `xengine_math`）
   - `SceneRef` 组件（原 WorldRef，概念按 Scene 修正）：`scene_id: u32`、`serial: u64`（场景内单调序号，稳定跨场景/序列化引用）、`generation: u32`（世代镜像）
   - `Parent { parent: Option<Entity> }` + `Children { children: Vec<Entity> }`：层级边组件；`HierarchyMaintain`（PostUpdate）维持双向一致与孤儿/悬挂清理；**`destroy`（Scene 层）默认级联销毁整棵子树**、`detach` 显式剥离保留为根（ECS 级 `World::destroy` 单实体语义不变）
   - `GlobalTransform { world: Matrix4F }`：**派生缓存组件（非三件套）+ dirty 标记驱动**（`TransformDirty` marker；set API 置位；`TransformPropagate` 两阶段：脏闭包标记 → **按实体并行**（chunk 拆分、每实体独立遍历祖先链 local 累乘）重算并重置标记；无顺序依赖，符合 SoA 并行）

@@ -17,7 +17,7 @@
 
 ## 3. GO 模块：三组件套餐与 create
 
-- [x] 3.1 `src/go/transform.rs`：`Transform { position: Vector3F, rotate: QuatF, scale: Vector3F }` + `Component` + `Default`；`set API`（`set_position/rotation/scale` 标记 dirty 见 5）
+- [x] 3.1 `src/go/transform.rs`：`Transform { position: Vector3F, rotate: QuaternionF, scale: Vector3F }` + `Component` + `Default`；`set API`（`set_position/rotation/scale` 标记 dirty 见 5）
 - [x] 3.2 `src/go/scene_ref.rs`：`SceneRef { scene_id, serial, generation }` + `Component`；Scene 自动填充（create 分配 serial）
 - [x] 3.3 `src/go/hierarchy.rs`：`Parent { parent: Option<Entity> }`、`Children { children: Vec<Entity> }` + `Component`；`HierarchyError`（Cycle/Stale）
 - [x] 3.4 `src/go/mod.rs`：`pub type GameObject = Entity`；`Scene::create_go(transform)`（注册三组件 + 生成 SceneRef + Parent None）；lib 导出
@@ -34,14 +34,14 @@
 
 - [x] 5.1 `GlobalTransform { world: Matrix4F }` 组件（派生、可选挂载）
 - [x] 5.2 `TransformDirty` marker 组件 + Scene set API：`set_go_transform(e, f)` / `set_transform_position/rotation/scale(e, …)` / `mark_transform_dirty(e)`（写入后自动置位）；doc 说明直写 pub 字段需显式 mark
-- [x] 5.3 `TransformPropagate`（PostUpdate）两阶段：**阶段 1**（顺序）从 dirty 实体沿 Children 标记全部后代为"待重算"；**阶段 2**（并行接入点，首版串行循环）对待重算实体**逐个独立遍历祖先链 local 累乘** `world(e)=trs(root)·…·trs(e)`（行向量），写自身 `GlobalTransform`、重置自身 dirty；无 GlobalTransform 实体跳过
+- [x] 5.3 `TransformPropagate`（PostUpdate）两阶段：**阶段 1**（顺序）从 dirty 实体沿 Children 标记全部后代为"待重算"；**阶段 2**（并行接入点，首版串行循环）对待重算实体**逐个独立遍历祖先链 local 累乘** `world(e)=trs(e)·…·trs(parent)·trs(root)`（行向量：`mul(A,B)` 先 A 后 B，最右因子最先作用），写自身 `GlobalTransform`、重置自身 dirty；无 GlobalTransform 实体跳过
 - [x] 5.4 单测：父 dirty→整棵子树全部重算+重置；仅叶子 dirty→叶子级重算（根/中间重算计数为 0）；**祖先链独立计算**（中间节点+叶子同时 dirty，叶子结果=全链累乘，与祖先计算顺序无关）；`(pos=(1,0,0)` 挂 `Z90°` 根）矩阵数值断言；未标记直写不重算；无缓存实体跳过；多根隔离
 - [x] 5.5 并行接入点：阶段 2 实现拆分为"待重算实体集按固定数量 chunk"的独立函数（单线程顺序调用；后续调度层并行化），文档记录 SoA 列按 chunk 切分的并行语义（每实体只写自身行、无写冲突、行为等价）
 - [x] 5.6 系统接入 Schedule（PostUpdate 注册顺序与冲突检测声明：读 Transform/Parent/Children/TransformDirty，写 GlobalTransform）
 
 ## 6. 包装层 GoHandle（位置缓存 + 世代校验）
 
-- [x] 6.1 `GoHandle { entity, loc: Option<GoLoc { arch, row, gen }> }`；World 内位置侧 O(1) 槽位访问接口（内部）
+- [x] 6.1 `GoHandle { entity, loc: Option<GoLoc { arch, row, generation }> }`；World 内位置侧 O(1) 槽位访问接口（内部）
 - [x] 6.2 访问 API：`Scene::go_view(&mut self, handle) -> Result<GoView>`（校验世代/位置；命中 O(1) 返回三组件引用；失效重解析或 `Err(GoHandleStale)`）；`GoView` 借用语义（无裸指针）
 - [x] 6.3 单测：稳定期访问值正确；迁移后重解析；destroy 后 `Err(GoHandleStale)`；重复访问一致性
 - [x] 6.4 基准扩展：`benches/go_access.rs` 增加 GoHandle 档（位置缓存校验访问），与既有 A/C/E 档对比记录
