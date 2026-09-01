@@ -36,6 +36,7 @@ XEngine 是一个 Rust 高性能游戏引擎项目，采用 OpenSpec 规范驱�
 - 每个特性开发使用**独立分支**：`feat/<特性>-<OpenSpec 变更ID>`（另有 `fix/`、`docs/`、`perf/`）
 - 以 **MR（Merge Request）** 方式合入 main，MR 必须关联对应 OpenSpec 变更（已归档）
 - **禁止直接向 main 推送**；MR 描述注明变更 ID 与影响层（core / device）
+- **MR 合入方式固定为 merge commit（no-FF）**：不使用 squash/变基合入；合入后**自动删除原始分支**（仓库 `delete_branch_on_merge=true` 已启用，未来 MR 沿用此约束）
 
 ## 测试与 MR 门禁
 
