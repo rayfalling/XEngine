@@ -1,0 +1,11 @@
+[package]
+name = "xengine-core"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "xengine_core"
+
+[[bench]]
+name = "ecs"
+harness = false

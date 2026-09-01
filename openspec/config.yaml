@@ -14,6 +14,7 @@ context: |
     - Performance-sensitive code backed by criteria/benchmarks (cargo bench) where applicable
     - Conventional commits: feat/fix/docs/refactor/perf/test/chore
   Git workflow: per-feature branches only (feat/<name>-<change-id>) merged via MR; an MR requires the linked OpenSpec change archived AND all unit tests passing (cargo test); direct pushes to main are forbidden
+  Decision policy: the user decides every choice (standards, options, scope); AI design proposals require explicit user approval before being written to disk or executed
   Quality gate: CI (GitHub Actions, standard runners, free on public repos) runs cargo test + clippy + fmt on every MR; merge conditions = CI green + OpenSpec change archived; the user owns design/architecture decisions only, no manual code review
 
 # Per-artifact rules (optional)

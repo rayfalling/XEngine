@@ -37,12 +37,22 @@ A high-performance game engine written in Rust, designed with a data-oriented, z
 # 构建
 cargo build
 
-# 运行
+# 运行（引擎名 + 最小 ECS/帧循环 demo）
 cargo run
 
-# 测试
+# 测试（核心函数/组件单测 + 集成测试）
 cargo test
+
+# 基准（100k 实体 create/iterate/join 占位）
+cargo bench -p xengine-core
 ```
+
+## 项目结构
+
+- `crates/xengine-core/` — **核心层（100% Rust，零外部依赖）**：ECS（实体/组件/Archetype SoA/查询/资源/Commands）、帧调度（FixedUpdate/Update/PostUpdate、限帧/不限帧、拓扑排序+冲突检测）、RenderSnapshot 接口
+- `crates/xengine/` — bin 入口与最小 demo
+- `openspec/` — OpenSpec 规范驱动工作流（见上）
+- `.agents/skills/` — 官方 OpenSpec 工作流技能（自动发现）
 
 ## License
 
