@@ -22,7 +22,7 @@
 
 - [x] 4.1 `Quaternion<T>`：identity/from_axis_angle/from_euler_yxz/mul/dot/conjugate/inverse/rotate_vec3/slerp/nlerp/from_mat4/to_mat4/from_to；(x,y,z,w)
 - [x] 4.2 `pub type QuaternionF = Quaternion<f32>`
-- [x] 4.3 单测：与 DXMath `RollPitchYaw` 语义一致（对照矩阵值）、`rotate_vec3(q,v)` == `to_mat4×v`、slerp 端点、conjugate/inverse、从两向量构造；布局锁 w 位置
+- [x] 4.3 单测：与 D3D 系标准 YXZ 欧拉约定一致（对照矩阵值）、`rotate_vec3(q,v)` == `to_mat4×v`、slerp 端点、conjugate/inverse、从两向量构造；布局锁 w 位置
 
 ## 5. Matrix3/4 与投影视矩阵
 
