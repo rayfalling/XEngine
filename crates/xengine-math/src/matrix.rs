@@ -1,6 +1,6 @@
 //! Generic row-major matrices: [`Matrix3`] and [`Matrix4`].
 //!
-//! Conventions (matching NeoX/DirectXMath, D3D-style):
+//! Conventions (row-vector D3D-style):
 //! * **row-major** storage — `m[row][col]`.
 //! * **row-vector × matrix** transforms — `v' = v · M`, so `A·B` applies `A`
 //!   first, then `B`.
@@ -299,7 +299,7 @@ impl<T: ScalarNum> Matrix4<T> {
     /// Transforms a 4-component vector (`v · M`), returning the raw
     /// homogeneous result **without** perspective division.
     ///
-    /// This matches DirectXMath `XMVector4Transform` — the `w` component is
+    /// This matches the reference `vec4_transform` — the `w` component is
     /// carried through transparently. For a direction vector (`w = 0`) the
     /// result is unaffected by the translation row and never panics.
     #[inline]
@@ -425,7 +425,7 @@ impl<T: FloatNum> Matrix4<T> {
 
     /// Builds a left-handed look-at view matrix (camera space forward `= +Z`).
     ///
-    /// Matches DirectXMath `XMMatrixLookAtLH`.
+    /// Matches the reference `look_at_lh`.
     #[inline]
     pub fn look_at_lh(eye: Vector3<T>, target: Vector3<T>, up: Vector3<T>) -> Self {
         let r2 = (target - eye).normalize_or_zero();
@@ -443,7 +443,7 @@ impl<T: FloatNum> Matrix4<T> {
     }
 
     /// Builds a left-handed perspective matrix mapping depth to `[0, 1]`
-    /// (D3D convention). Matches DirectXMath `XMMatrixPerspectiveFovLH`.
+    /// (D3D convention). Matches the reference `perspective_fov_lh`.
     ///
     /// Note: the depth mapping uses `m[2][2] = far/(far-near)` and
     /// `m[2][3] = 1`. (`m[3][2] = -m[2][2]*near` is the near-plane offset.)
@@ -465,8 +465,8 @@ impl<T: FloatNum> Matrix4<T> {
         }
     }
 
-    /// Builds a left-handed orthographic matrix. Matches DirectXMath
-    /// `XMMatrixOrthographicLH`.
+    /// Builds a left-handed orthographic matrix. Matches the reference
+    /// `orthographic_lh`.
     #[inline]
     pub fn ortho_lh(width: T, height: T, near: T, far: T) -> Self {
         let f_range = T::ONE / (far - near);

@@ -1,8 +1,9 @@
 //! Generic quaternion primitives.
 //!
-//! A quaternion is stored as `(x, y, z, w)` with `w` **last** (DirectXMath
-//! convention). All rotation APIs assume the left-handed, `forward = +Z`
-//! convention of the crate. The public fields are the FFI layout contract.
+//! A quaternion is stored as `(x, y, z, w)` with `w` **last** (the reference
+//! D3D-style convention). All rotation APIs assume the left-handed,
+//! `forward = +Z` convention of the crate. The public fields are the FFI layout
+//! contract.
 
 use crate::matrix::{Matrix3, Matrix4};
 use crate::scalar::{FloatNum, ScalarNum};
@@ -91,7 +92,7 @@ impl<T: FloatNum> Quaternion<T> {
     /// Builds a quaternion from euler angles in **YXZ** order
     /// `(pitch, yaw, roll)`.
     ///
-    /// This matches DirectXMath `XMQuaternionRotationRollPitchYaw(p, y, r)`.
+    /// This matches the reference `quaternion_roll_pitch_yaw(p, y, r)`.
     #[inline]
     pub fn from_euler_yxz(pitch: T, yaw: T, roll: T) -> Self {
         let half_p = pitch / (T::ONE + T::ONE);
@@ -111,7 +112,7 @@ impl<T: FloatNum> Quaternion<T> {
     /// Extracts euler angles in **YXZ** order `(pitch, yaw, roll)`.
     ///
     /// The inverse of [`from_euler_yxz`](Self::from_euler_yxz); matches the
-    /// DirectXMath `XMQuaternionToRotationZXY` scalar path.
+    /// reference `quaternion_to_euler` scalar path.
     #[inline]
     pub fn to_euler_yxz(&self) -> Vector3<T> {
         let singularity_test = self.y * self.z - self.x * self.w;
@@ -194,7 +195,7 @@ impl<T: FloatNum> Quaternion<T> {
     /// Rotates a vector by this (unit) quaternion.
     ///
     /// Equivalent to `Matrix4::from_quat(q).transform_vec3(v)`; assumes `q` is
-    /// unit-length, matching DirectXMath.
+    /// unit-length, matching the reference D3D-style convention.
     #[inline]
     pub fn rotate_vec3(&self, v: Vector3<T>) -> Vector3<T> {
         let qv = self.xyz();
@@ -235,7 +236,7 @@ impl<T: FloatNum> Quaternion<T> {
 
     /// Builds the quaternion that rotates `from` to `to` (both directions).
     ///
-    /// Matches `XMQuaternionRotationBetweenVectors` semantics, including the
+    /// Matches `quaternion_from_to` semantics, including the
     /// opposite-vector and near-parallel edge cases.
     #[inline]
     pub fn from_to(from: Vector3<T>, to: Vector3<T>) -> Self {
@@ -278,7 +279,7 @@ impl<T: FloatNum> Quaternion<T> {
     /// Extracts a rotation quaternion from a [`Matrix4`].
     ///
     /// Uses only the upper-left 3×3 rotation part; matches the standard
-    /// DirectXMath `XMQuaternionRotationMatrix` extraction.
+    /// `quaternion_from_matrix` extraction.
     #[inline]
     pub fn from_mat4(m: &Matrix4<T>) -> Self {
         let m00 = m.m[0][0];
@@ -421,8 +422,8 @@ mod tests {
 
     #[test]
     fn euler_yxz_matches_dxmath_matrix() {
-        // Reference computed independently (f64) from DirectXMath
-        // XMQuaternionRotationRollPitchYaw(0.3, 0.4, 0.5) -> Standard
+        // Reference computed independently (f64) from the reference
+        // `quaternion_roll_pitch_yaw(0.3, 0.4, 0.5)` -> Standard
         // row-vector quaternion-to-matrix.
         let p = 0.3f64;
         let y = 0.4f64;

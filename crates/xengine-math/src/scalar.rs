@@ -2,8 +2,8 @@
 //!
 //! The project is intentionally zero-dependency (`std` only), so this module
 //! provides its own tiny abstraction instead of pulling in `num-traits`. The
-//! split mirrors the C++ `_Vector3<T>` + `is_same_v<float>` SFINAE pattern used
-//! by NeoX `math3d`:
+//! split mirrors the C++ `Vector3<T>` + `is_same_v<float>` SFINAE pattern used
+//! by the project's math layer:
 //!
 //! * [`ScalarNum`] — the arithmetic + conversion requirements shared by the
 //!   float and integer variants (component/layout math only).
