@@ -1,0 +1,11 @@
+[package]
+name = "xengine"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+xengine-core = { workspace = true }
+
+[[bin]]
+name = "xengine"
+path = "src/main.rs"
