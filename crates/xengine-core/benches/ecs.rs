@@ -51,7 +51,9 @@ fn main() {
     }
     let start = Instant::now();
     let mut sum = 0u64;
-    world2.query2::<Position, Velocity>(|_e, _p, _v| sum += 1);
+    world2
+        .query2::<Position, Velocity>(|_e, _p, _v| sum += 1)
+        .unwrap();
     let join_elapsed = start.elapsed();
     println!(
         "query2({N}): {:?} ({:.2} ns/entity)",

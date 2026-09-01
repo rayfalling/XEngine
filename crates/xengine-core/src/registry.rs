@@ -28,11 +28,10 @@ impl ComponentDescriptor {
     pub fn of<T>(scriptable: bool) -> Self {
         Self {
             size: std::mem::size_of::<T>(),
-            align: if std::mem::size_of::<T>() == 0 {
-                1
-            } else {
-                std::mem::align_of::<T>()
-            },
+            // The true alignment is always used: ZSTs with an explicit
+            // `#[repr(align(N))]` must keep their alignment so references
+            // created from column pointers stay valid.
+            align: std::mem::align_of::<T>(),
             scriptable,
             drop_fn: Some(needs_drop::<T>()),
         }
@@ -186,5 +185,14 @@ mod tests {
         assert_eq!(reg.order().len(), 2);
         assert_eq!(reg.order()[0], TypeId::of::<Health>());
         assert_eq!(reg.order()[1], TypeId::of::<Transform>());
+    }
+
+    #[test]
+    fn zst_keeps_explicit_alignment() {
+        #[repr(align(16))]
+        struct AlignedZst;
+        let desc = ComponentDescriptor::of::<AlignedZst>(false);
+        assert_eq!(desc.size, 0, "ZST has zero size");
+        assert_eq!(desc.align, 16, "ZST keeps its explicit alignment");
     }
 }
