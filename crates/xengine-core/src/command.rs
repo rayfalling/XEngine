@@ -1,10 +1,12 @@
 //! Deferred world mutations: `Commands`.
 
 use crate::entity::Entity;
+use crate::error::WorldResult;
 use crate::world::World;
 
-/// One deferred world mutation closure.
-pub type WorldCommand = Box<dyn FnOnce(&mut World)>;
+/// One deferred world mutation closure returning its outcome so errors are
+/// surfaced at flush time (matching the synchronous API semantics).
+pub type WorldCommand = Box<dyn FnOnce(&mut World) -> WorldResult<()>>;
 
 /// Queue of deferred closures applied at the next flush point.
 #[derive(Default)]
@@ -21,7 +23,8 @@ impl CommandQueue {
 }
 
 /// Deferred operations buffered during a system and flushed at the system
-/// boundary. Ordering: FIFO; semantics identical to the synchronous API.
+/// boundary. Ordering: FIFO; semantics identical to the synchronous API —
+/// errors raised by queued operations are reported by `flush_commands`.
 pub struct Commands<'a> {
     world: &'a mut World,
 }
@@ -37,7 +40,7 @@ impl<'a> Commands<'a> {
         let e = self.world.reserve_entity();
         self.world.queue().push(Box::new(move |world| {
             world.create_into(e);
-            let _ = world.add(e, a);
+            world.add(e, a)
         }));
         e
     }
@@ -47,8 +50,8 @@ impl<'a> Commands<'a> {
         let e = self.world.reserve_entity();
         self.world.queue().push(Box::new(move |world| {
             world.create_into(e);
-            let _ = world.add(e, a);
-            let _ = world.add(e, b);
+            world.add(e, a)?;
+            world.add(e, b)
         }));
         e
     }
@@ -58,9 +61,9 @@ impl<'a> Commands<'a> {
         let e = self.world.reserve_entity();
         self.world.queue().push(Box::new(move |world| {
             world.create_into(e);
-            let _ = world.add(e, a);
-            let _ = world.add(e, b);
-            let _ = world.add(e, c);
+            world.add(e, a)?;
+            world.add(e, b)?;
+            world.add(e, c)
         }));
         e
     }
@@ -76,44 +79,48 @@ impl<'a> Commands<'a> {
         let e = self.world.reserve_entity();
         self.world.queue().push(Box::new(move |world| {
             world.create_into(e);
-            let _ = world.add(e, a);
-            let _ = world.add(e, b);
-            let _ = world.add(e, c);
-            let _ = world.add(e, d);
+            world.add(e, a)?;
+            world.add(e, b)?;
+            world.add(e, c)?;
+            world.add(e, d)
         }));
         e
     }
 
     /// Queues adding a component.
     pub fn add<T: 'static>(&mut self, entity: Entity, value: T) {
-        self.world.queue().push(Box::new(move |world| {
-            let _ = world.add(entity, value);
-        }));
+        self.world
+            .queue()
+            .push(Box::new(move |world| world.add(entity, value)));
     }
 
     /// Queues removing a component type.
     pub fn remove<T: 'static>(&mut self, entity: Entity) {
-        self.world.queue().push(Box::new(move |world| {
-            let _ = world.remove::<T>(entity);
-        }));
+        self.world
+            .queue()
+            .push(Box::new(move |world| world.remove::<T>(entity)));
     }
 
     /// Queues entity destruction (idempotent).
     pub fn destroy(&mut self, entity: Entity) {
-        self.world.queue().push(Box::new(move |world| {
-            let _ = world.destroy(entity);
-        }));
+        self.world
+            .queue()
+            .push(Box::new(move |world| world.destroy(entity)));
     }
 
     /// Queues inserting a resource (replaces an existing one).
     pub fn insert_resource<T: 'static>(&mut self, value: T) {
         self.world.queue().push(Box::new(move |world| {
             world.insert_resource(value);
+            Ok(())
         }));
     }
 
     /// Queues an arbitrary deferred closure.
     pub fn push(&mut self, f: impl FnOnce(&mut World) + 'static) {
-        self.world.queue().push(Box::new(f));
+        self.world.queue().push(Box::new(move |world| {
+            f(world);
+            Ok(())
+        }));
     }
 }

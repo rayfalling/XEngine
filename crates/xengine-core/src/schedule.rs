@@ -69,7 +69,9 @@ impl Schedule {
         if let Some((_, order)) = self.orders.iter().find(|(s, _)| *s == stage) {
             for &i in order {
                 self.systems[i].run(world);
-                world.flush_commands();
+                // Deferred command errors are surfaced to callers that
+                // flush explicitly; the schedule keeps running by contract.
+                let _ = world.flush_commands();
             }
         }
     }

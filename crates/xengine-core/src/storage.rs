@@ -56,14 +56,21 @@ impl Column {
         let new_layout = self.layout(new_cap);
         if self.cap == 0 {
             // Safety: layout has non-zero size and valid alignment.
-            self.ptr = unsafe { NonNull::new_unchecked(alloc(new_layout)) };
+            let ptr = unsafe { alloc(new_layout) };
+            self.ptr = match NonNull::new(ptr) {
+                Some(p) => p,
+                // OOM: abort like the standard allocator instead of UB.
+                None => std::alloc::handle_alloc_error(new_layout),
+            };
         } else {
             // Safety: the old pointer came from alloc with old_layout.
             let old_layout = self.layout(self.cap);
             // Safety: realloc keeps the old data and the new layout's size
             // is computed with the same element size.
-            self.ptr = unsafe {
-                NonNull::new_unchecked(realloc(self.ptr.as_ptr(), old_layout, new_layout.size()))
+            let ptr = unsafe { realloc(self.ptr.as_ptr(), old_layout, new_layout.size()) };
+            self.ptr = match NonNull::new(ptr) {
+                Some(p) => p,
+                None => std::alloc::handle_alloc_error(new_layout),
             };
         }
         self.cap = new_cap;

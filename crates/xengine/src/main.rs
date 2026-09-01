@@ -30,7 +30,8 @@ fn demo_engine() {
         move |w| {
             w.query2::<Position, Velocity>(|_e, pos, vel| {
                 pos.0 += vel.0;
-            });
+            })
+            .expect("distinct query types");
         },
     )];
     let schedule = Schedule::build(systems).unwrap();
