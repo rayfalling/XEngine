@@ -176,9 +176,17 @@ mod tests {
 
     #[test]
     fn uncapped_mode_uses_measured_clamped() {
-        let mode = FrameMode::Uncapped { max_dt: Duration::from_millis(50) };
-        assert_eq!(mode.frame_dt(Duration::from_millis(12)), Duration::from_millis(12));
-        assert_eq!(mode.frame_dt(Duration::from_millis(120)), Duration::from_millis(50));
+        let mode = FrameMode::Uncapped {
+            max_dt: Duration::from_millis(50),
+        };
+        assert_eq!(
+            mode.frame_dt(Duration::from_millis(12)),
+            Duration::from_millis(12)
+        );
+        assert_eq!(
+            mode.frame_dt(Duration::from_millis(120)),
+            Duration::from_millis(50)
+        );
     }
 
     #[test]
@@ -205,8 +213,14 @@ mod tests {
             })
         };
         let schedule = Schedule::build(vec![fixed, update, post]).unwrap();
-        let mut engine = Engine::new(World::new(), schedule, FrameMode::Uncapped { max_dt: Duration::from_secs(1) })
-            .with_fixed_step(Duration::from_millis(20));
+        let mut engine = Engine::new(
+            World::new(),
+            schedule,
+            FrameMode::Uncapped {
+                max_dt: Duration::from_secs(1),
+            },
+        )
+        .with_fixed_step(Duration::from_millis(20));
         let stats = engine.tick(Duration::from_millis(100));
         assert_eq!(stats.fixed_runs, 5);
         let log = ticks.borrow();
@@ -218,8 +232,14 @@ mod tests {
     #[test]
     fn fast_frame_runs_zero_fixed() {
         let w = World::new();
-        let stats = Engine::new(w, empty_schedule(), FrameMode::Uncapped { max_dt: Duration::from_secs(1) })
-            .tick(Duration::from_millis(5));
+        let stats = Engine::new(
+            w,
+            empty_schedule(),
+            FrameMode::Uncapped {
+                max_dt: Duration::from_secs(1),
+            },
+        )
+        .tick(Duration::from_millis(5));
         assert_eq!(stats.fixed_runs, 0);
         assert_eq!(stats.dt, Duration::from_millis(5));
     }
@@ -232,7 +252,9 @@ mod tests {
             FrameMode::Capped { target_fps: 60 },
         );
         let a = engine.tick(Duration::from_millis(30));
-        engine.set_mode(FrameMode::Uncapped { max_dt: Duration::from_millis(50) });
+        engine.set_mode(FrameMode::Uncapped {
+            max_dt: Duration::from_millis(50),
+        });
         let b = engine.tick(Duration::from_millis(30));
         // Fixed step unchanged; dt follows the mode.
         assert_eq!(engine.fixed_step(), Duration::from_secs(1) / 60);
@@ -242,7 +264,13 @@ mod tests {
 
     #[test]
     fn time_state_is_published_and_snapshot_available() {
-        let mut engine = Engine::new(World::new(), empty_schedule(), FrameMode::Uncapped { max_dt: Duration::from_secs(1) });
+        let mut engine = Engine::new(
+            World::new(),
+            empty_schedule(),
+            FrameMode::Uncapped {
+                max_dt: Duration::from_secs(1),
+            },
+        );
         engine.tick(Duration::from_millis(16));
         let ts = engine.world().get_resource::<TimeState>().unwrap().unwrap();
         assert_eq!(ts.frame, 1);

@@ -96,12 +96,21 @@ impl World {
     }
 
     /// Computes the ordered type set for a migration.
-    fn ordered_types(&self, types: &[TypeId], add: Option<TypeId>, remove: Option<TypeId>) -> Vec<TypeId> {
-        let mut set: Vec<TypeId> = types.iter().filter(|t| Some(**t) != remove).cloned().collect();
-        if let Some(add) = add {
-            if !set.contains(&add) {
-                set.push(add);
-            }
+    fn ordered_types(
+        &self,
+        types: &[TypeId],
+        add: Option<TypeId>,
+        remove: Option<TypeId>,
+    ) -> Vec<TypeId> {
+        let mut set: Vec<TypeId> = types
+            .iter()
+            .filter(|t| Some(**t) != remove)
+            .cloned()
+            .collect();
+        if let Some(add) = add
+            && !set.contains(&add)
+        {
+            set.push(add);
         }
         set.sort_by_key(|t| self.reg_index(t));
         set
@@ -120,7 +129,8 @@ impl World {
             })
             .collect();
         let id = self.archetypes.len();
-        self.archetypes.push(Archetype::new(id, types.to_vec(), &descs));
+        self.archetypes
+            .push(Archetype::new(id, types.to_vec(), &descs));
         self.archetype_ids.insert(types.to_vec(), id);
         id
     }
@@ -165,7 +175,12 @@ impl World {
     }
 
     /// Creates an entity with three initial components.
-    pub fn create3<A: 'static, B: 'static, C: 'static>(&mut self, a: A, b: B, c: C) -> WorldResult<Entity> {
+    pub fn create3<A: 'static, B: 'static, C: 'static>(
+        &mut self,
+        a: A,
+        b: B,
+        c: C,
+    ) -> WorldResult<Entity> {
         let e = self.create_empty();
         self.add(e, a)?;
         self.add(e, b)?;
@@ -238,7 +253,12 @@ impl World {
     }
 
     /// Adds two components in one call.
-    pub fn add_bundle2<A: 'static, B: 'static>(&mut self, entity: Entity, a: A, b: B) -> WorldResult<()> {
+    pub fn add_bundle2<A: 'static, B: 'static>(
+        &mut self,
+        entity: Entity,
+        a: A,
+        b: B,
+    ) -> WorldResult<()> {
         self.add(entity, a)?;
         self.add(entity, b)
     }
@@ -382,7 +402,10 @@ impl World {
         for arch in &self.archetypes {
             for row in 0..arch.len() {
                 let eidx = arch.entity_at(row);
-                out.push(Entity::from_parts(eidx, self.slots[eidx as usize].generation));
+                out.push(Entity::from_parts(
+                    eidx,
+                    self.slots[eidx as usize].generation,
+                ));
             }
         }
         out
@@ -452,7 +475,9 @@ impl World {
                 // Safety: &mut self gives exclusivity for both refs.
                 let pa = col_a.get_mut_ptr(row);
                 let pb = col_b.get_mut_ptr(row);
-                f(e, unsafe { &mut *(pa as *mut A) }, unsafe { &mut *(pb as *mut B) });
+                f(e, unsafe { &mut *(pa as *mut A) }, unsafe {
+                    &mut *(pb as *mut B)
+                });
             }
         }
     }
@@ -697,15 +722,17 @@ mod tests {
         w.register::<A>(false).unwrap();
         w.register::<B>(false).unwrap();
         w.register::<C>(false).unwrap();
-        let e = w.create3(A(log.clone()), B(log.clone()), C(log.clone())).unwrap();
+        let e = w
+            .create3(A(log.clone()), B(log.clone()), C(log.clone()))
+            .unwrap();
         w.destroy(e).unwrap();
         assert_eq!(*log.borrow(), vec!["A", "B", "C"]);
     }
 
     #[test]
     fn drop_runs_once_per_component() {
-        use std::sync::atomic::{AtomicUsize, Ordering};
         use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
         struct Tracked(Arc<AtomicUsize>);
         impl Drop for Tracked {
             fn drop(&mut self) {
@@ -788,12 +815,14 @@ mod tests {
     #[test]
     fn commands_flush_in_order_with_sync_semantics() {
         let mut w = World::new();
-        let mut cmds = w.commands();
-        let first = cmds.create1(Position(1.0, 1.0));
-        let second = cmds.create2(Position(2.0, 2.0), Velocity(9.0, 9.0));
-        cmds.add(first, Velocity(3.0, 3.0));
-        cmds.destroy(second);
-        drop(cmds);
+        let (first, second) = {
+            let mut cmds = w.commands();
+            let first = cmds.create1(Position(1.0, 1.0));
+            let second = cmds.create2(Position(2.0, 2.0), Velocity(9.0, 9.0));
+            cmds.add(first, Velocity(3.0, 3.0));
+            cmds.destroy(second);
+            (first, second)
+        };
         // Nothing applied yet.
         assert_eq!(w.entity_count(), 0);
         w.flush_commands();

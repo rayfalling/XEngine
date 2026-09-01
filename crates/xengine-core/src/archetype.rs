@@ -107,7 +107,11 @@ impl Archetype {
     /// # Safety
     /// `drop_col` must be a valid column index whose value at `row` is still
     /// owned by this archetype.
-    pub unsafe fn remove_row_migrate(&mut self, row: usize, drop_col: Option<usize>) -> Option<u32> {
+    pub unsafe fn remove_row_migrate(
+        &mut self,
+        row: usize,
+        drop_col: Option<usize>,
+    ) -> Option<u32> {
         debug_assert!(row < self.len());
         for (ci, col) in self.columns.iter_mut().enumerate() {
             if Some(ci) == drop_col {

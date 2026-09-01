@@ -4,7 +4,7 @@
 //! Internally this is raw memory that respects the component type's
 //! alignment and size, so hot-path iteration stays cache friendly.
 
-use std::alloc::{alloc, dealloc, realloc, Layout};
+use std::alloc::{Layout, alloc, dealloc, realloc};
 use std::ptr::NonNull;
 
 use super::registry::ComponentDescriptor;
@@ -63,11 +63,7 @@ impl Column {
             // Safety: realloc keeps the old data and the new layout's size
             // is computed with the same element size.
             self.ptr = unsafe {
-                NonNull::new_unchecked(realloc(
-                    self.ptr.as_ptr(),
-                    old_layout,
-                    new_layout.size(),
-                ))
+                NonNull::new_unchecked(realloc(self.ptr.as_ptr(), old_layout, new_layout.size()))
             };
         }
         self.cap = new_cap;
@@ -162,7 +158,11 @@ impl Column {
         let mut buf = vec![0u8; self.desc.size];
         // Safety: both pointers are valid for desc.size bytes.
         unsafe {
-            std::ptr::copy_nonoverlapping(self.ptr.as_ptr().add(i * self.elem_size()), buf.as_mut_ptr(), self.desc.size);
+            std::ptr::copy_nonoverlapping(
+                self.ptr.as_ptr().add(i * self.elem_size()),
+                buf.as_mut_ptr(),
+                self.desc.size,
+            );
         }
         buf
     }
@@ -239,6 +239,7 @@ mod tests {
         use std::sync::atomic::{AtomicUsize, Ordering};
         static COUNT: AtomicUsize = AtomicUsize::new(0);
         #[derive(Debug)]
+        #[allow(dead_code)]
         struct DropCounter(usize);
         let drop_fn: fn(*mut u8) = |ptr| {
             // Safety: ptr is a live DropCounter (drops happen on live data).
@@ -258,8 +259,16 @@ mod tests {
             unsafe { col.push_copy(v as *const DropCounter as *const u8) };
         }
         col.clear();
-        assert_eq!(COUNT.load(Ordering::SeqCst), 2, "drop must run once per element");
+        assert_eq!(
+            COUNT.load(Ordering::SeqCst),
+            2,
+            "drop must run once per element"
+        );
         drop(col);
-        assert_eq!(COUNT.load(Ordering::SeqCst), 2, "clear empties; Drop must not re-drop");
+        assert_eq!(
+            COUNT.load(Ordering::SeqCst),
+            2,
+            "clear empties; Drop must not re-drop"
+        );
     }
 }
