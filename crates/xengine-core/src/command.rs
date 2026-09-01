@@ -3,16 +3,19 @@
 use crate::entity::Entity;
 use crate::world::World;
 
+/// One deferred world mutation closure.
+pub type WorldCommand = Box<dyn FnOnce(&mut World)>;
+
 /// Queue of deferred closures applied at the next flush point.
 #[derive(Default)]
-pub struct CommandQueue(pub(crate) Vec<Box<dyn FnOnce(&mut World)>>);
+pub struct CommandQueue(pub(crate) Vec<WorldCommand>);
 
 impl CommandQueue {
-    pub(crate) fn push(&mut self, f: Box<dyn FnOnce(&mut World)>) {
+    pub(crate) fn push(&mut self, f: WorldCommand) {
         self.0.push(f);
     }
 
-    pub(crate) fn take(&mut self) -> Vec<Box<dyn FnOnce(&mut World)>> {
+    pub(crate) fn take(&mut self) -> Vec<WorldCommand> {
         std::mem::take(&mut self.0)
     }
 }
@@ -63,7 +66,13 @@ impl<'a> Commands<'a> {
     }
 
     /// Queues entity creation with four initial components.
-    pub fn create4<A: 'static, B: 'static, C: 'static, D: 'static>(&mut self, a: A, b: B, c: C, d: D) -> Entity {
+    pub fn create4<A: 'static, B: 'static, C: 'static, D: 'static>(
+        &mut self,
+        a: A,
+        b: B,
+        c: C,
+        d: D,
+    ) -> Entity {
         let e = self.world.reserve_entity();
         self.world.queue().push(Box::new(move |world| {
             world.create_into(e);

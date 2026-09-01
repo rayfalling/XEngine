@@ -48,11 +48,7 @@ impl Schedule {
     /// a write on either side) force an explicit relation; unconstrained
     /// systems keep registration order (deterministic).
     pub fn build(systems: Vec<System>) -> Result<Self, ScheduleError> {
-        let stages = [
-            Stage::FixedUpdate,
-            Stage::Update,
-            Stage::PostUpdate,
-        ];
+        let stages = [Stage::FixedUpdate, Stage::Update, Stage::PostUpdate];
         let mut orders = Vec::new();
         for stage in stages {
             let idxs: Vec<usize> = systems
@@ -162,7 +158,8 @@ fn topo_stage(
         }
     }
     Ok(order)
-}#[cfg(test)]
+}
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -180,7 +177,11 @@ mod tests {
         };
         assert!(matches!(
             err,
-            ScheduleError::UnorderedConflict { a: "reader", b: "writer", .. }
+            ScheduleError::UnorderedConflict {
+                a: "reader",
+                b: "writer",
+                ..
+            }
         ));
     }
 
@@ -213,9 +214,16 @@ mod tests {
         let log = Rc::new(RefCell::new(Vec::new()));
         let mk = |name: &'static str, key: &'static str| {
             let l = log.clone();
-            System::with_spec(name, Stage::Update, &[(key, AccessKind::Write)], None, None, move |_| {
-                l.borrow_mut().push(name);
-            })
+            System::with_spec(
+                name,
+                Stage::Update,
+                &[(key, AccessKind::Write)],
+                None,
+                None,
+                move |_| {
+                    l.borrow_mut().push(name);
+                },
+            )
         };
         let systems = vec![mk("x", "A"), mk("y", "B"), mk("z", "C")];
         let schedule = Schedule::build(systems).unwrap();
@@ -229,11 +237,21 @@ mod tests {
         use std::cell::RefCell;
         use std::rc::Rc;
         let log = Rc::new(RefCell::new(Vec::new()));
-        let mk = |name: &'static str, key: &'static str, before: Option<&'static str>, after: Option<&'static str>| {
+        let mk = |name: &'static str,
+                  key: &'static str,
+                  before: Option<&'static str>,
+                  after: Option<&'static str>| {
             let l = log.clone();
-            System::with_spec(name, Stage::Update, &[(key, AccessKind::Write)], before, after, move |_| {
-                l.borrow_mut().push(name);
-            })
+            System::with_spec(
+                name,
+                Stage::Update,
+                &[(key, AccessKind::Write)],
+                before,
+                after,
+                move |_| {
+                    l.borrow_mut().push(name);
+                },
+            )
         };
         // one runs before two (explicit), both write T.
         let systems = vec![

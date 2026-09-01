@@ -114,7 +114,8 @@ impl ComponentRegistry {
     /// Idempotent auto-registration used by world operations.
     pub fn ensure_registered<T: 'static>(&mut self) {
         if !self.descriptors.contains_key(&TypeId::of::<T>()) {
-            self.register::<T>(false).expect("uncontended auto-register");
+            self.register::<T>(false)
+                .expect("uncontended auto-register");
         }
     }
 

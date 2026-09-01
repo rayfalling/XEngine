@@ -27,7 +27,9 @@ impl fmt::Display for WorldError {
                 write!(f, "component '{name}' already exists on the entity")
             }
             Self::ComponentNotRegistered(name) => write!(f, "component '{name}' is not registered"),
-            Self::DuplicateRegistration(name) => write!(f, "component '{name}' is already registered"),
+            Self::DuplicateRegistration(name) => {
+                write!(f, "component '{name}' is already registered")
+            }
             Self::ResourceNotFound(name) => write!(f, "resource '{name}' is not present"),
             Self::BorrowConflict(name) => write!(f, "borrow conflict on '{name}'"),
         }

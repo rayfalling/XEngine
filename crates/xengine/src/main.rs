@@ -18,26 +18,23 @@ fn demo_engine() {
     for i in 0..10 {
         world.create2(Position(i as f32), Velocity(1.0)).unwrap();
     }
-    let systems = vec![
-        System::with_spec(
-            "movement",
-            Stage::Update,
-            &[("Position", AccessKind::Write), ("Velocity", AccessKind::Read)],
-            None,
-            None,
-            move |w| {
-                w.query2::<Position, Velocity>(|_e, pos, vel| {
-                    pos.0 += vel.0;
-                });
-            },
-        ),
-    ];
+    let systems = vec![System::with_spec(
+        "movement",
+        Stage::Update,
+        &[
+            ("Position", AccessKind::Write),
+            ("Velocity", AccessKind::Read),
+        ],
+        None,
+        None,
+        move |w| {
+            w.query2::<Position, Velocity>(|_e, pos, vel| {
+                pos.0 += vel.0;
+            });
+        },
+    )];
     let schedule = Schedule::build(systems).unwrap();
-    let mut engine = Engine::new(
-        world,
-        schedule,
-        FrameMode::Capped { target_fps: 60 },
-    );
+    let mut engine = Engine::new(world, schedule, FrameMode::Capped { target_fps: 60 });
     engine.tick(core::time::Duration::from_millis(16));
     println!("entities moved: {}", engine.world().entity_count());
 }
