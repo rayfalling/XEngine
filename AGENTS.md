@@ -10,6 +10,13 @@ XEngine 是一个 Rust 高性能游戏引擎项目，采用 OpenSpec 规范驱�
 4. **硬性规则：变更必须完成归档（`openspec proposal archive <id>`）之后，才允许合入 main 分支。**
    未归档的 `openspec/changes/` 条目不视为完成，main 只接受已归档规范对应的代码。
 
+## 质量与合入（CI 门禁，用户只做设计/架构决策）
+
+- **用户只做设计决策与架构规划**：用户不亲自审核代码；代码质量验证交由 **CI（GitHub Actions）**自动化（公开仓库标准 runner 免费）
+- MR 合入条件 = **CI 全部通过（cargo test 全绿 + clippy/format 检查 + 需含单测）+ OpenSpec 变更已归档**；无需人工代码审查
+- 设计/架构审批仍然**前置**（User Approval Gate）；代码层面决策在 CI 门禁下由执行者（AI）完成
+- 流程：设计审批 → 实现（分支）→ `cargo test`/`clippy` 本地全绿 → `openspec validate` → `openspec archive` → 推分支 → MR（等待 CI 绿灯 → 合入）
+
 ## 架构约束（分层）
 
 - **核心层（Core）**：全部为 **Rust** 交互（ECS/SoA 数据导向、纯 Rust 公开接口）
