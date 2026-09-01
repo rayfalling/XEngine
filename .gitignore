@@ -1,6 +1,9 @@
 # Rust build artifacts
 /target
 
+# Worktree working areas (git worktree checkouts used by agent implementation)
+.wt-*/
+
 # IDE
 .idea/
 .vscode/
