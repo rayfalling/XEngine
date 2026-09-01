@@ -75,20 +75,24 @@ impl Archetype {
 
     /// Removes row `row` completely: drops every column's value at the row,
     /// then swap-moves the last row in. Returns the entity index that was
-    /// moved into `row` (if any).
+    /// moved into `row` (if any), so the caller can update its slot.
+    ///
+    /// NOTE: `swap_remove` returns the value at `row` (the removed entity);
+    /// the value moved in comes from the last slot, read BEFORE the swap.
     pub fn remove_row(&mut self, row: usize) -> Option<u32> {
         debug_assert!(row < self.len());
         for col in &mut self.columns {
             col.remove_swap(row);
         }
         let last = self.len() - 1;
-        let moved = if row != last {
-            self.entities.swap_remove(row)
+        if row != last {
+            let moved_in = self.entities[last];
+            self.entities.swap_remove(row);
+            Some(moved_in)
         } else {
             self.entities.pop();
-            return None;
-        };
-        Some(moved)
+            None
+        }
     }
 
     /// Drops every element in every column (registration order) and clears
@@ -123,7 +127,11 @@ impl Archetype {
         }
         let last = self.len() - 1;
         if row != last {
-            Some(self.entities.swap_remove(row))
+            // NOTE: swap_remove returns the removed entity; the entity moved
+            // in comes from the last slot, read BEFORE the swap.
+            let moved_in = self.entities[last];
+            self.entities.swap_remove(row);
+            Some(moved_in)
         } else {
             self.entities.pop();
             None
