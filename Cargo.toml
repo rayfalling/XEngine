@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/xengine-core", "crates/xengine"]
+members = ["crates/xengine-core", "crates/xengine", "crates/xengine-math"]
 
 [workspace.package]
 edition = "2024"
@@ -8,3 +8,4 @@ version = "0.1.0"
 
 [workspace.dependencies]
 xengine-core = { path = "crates/xengine-core" }
+xengine-math = { path = "crates/xengine-math" }

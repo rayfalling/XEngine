@@ -1,0 +1,18 @@
+[package]
+name = "xengine-math"
+version.workspace = true
+edition.workspace = true
+description = "Zero-dependency D3D-style math primitives for XEngine (row-major, row-vector, left-handed)."
+
+[lib]
+name = "xengine_math"
+
+[features]
+# Align all public math types to 64 bytes (except `Vector2<T>` which is fixed
+# at 8). When this is enabled the C++ device-layer mirror headers must update
+# their layout to match; the array stride also grows (see `docs` in lib.rs).
+xmath_align64 = []
+
+[[bench]]
+name = "math_core"
+harness = false

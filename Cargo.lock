@@ -12,3 +12,7 @@ dependencies = [
 [[package]]
 name = "xengine-core"
 version = "0.1.0"
+
+[[package]]
+name = "xengine-math"
+version = "0.1.0"
