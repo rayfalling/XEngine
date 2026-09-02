@@ -14,8 +14,7 @@
 //!   first, then `B`.
 //! * **Left-handed** coordinate system, identity forward `= +Z`.
 //! * Quaternion components `(x, y, z, w)` with `w` **last**.
-//! * Euler angles in **YXZ** order, matching DirectXMath
-//!   `XMQuaternionRotationRollPitchYaw(pitch, yaw, roll)`.
+//! * Euler angles in **YXZ** order (pitch, yaw, roll), D3D-style.
 //! * `Matrix4` translation in `m[3][0..2]`.
 //! * `perspective_lh` maps depth to `[0, 1]` (D3D convention).
 //!

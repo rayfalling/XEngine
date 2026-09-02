@@ -1,6 +1,6 @@
 //! Generic row-major matrices: [`Matrix3`] and [`Matrix4`].
 //!
-//! Conventions (matching NeoX/DirectXMath, D3D-style):
+//! Conventions (D3D-style):
 //! * **row-major** storage — `m[row][col]`.
 //! * **row-vector × matrix** transforms — `v' = v · M`, so `A·B` applies `A`
 //!   first, then `B`.
@@ -299,7 +299,7 @@ impl<T: ScalarNum> Matrix4<T> {
     /// Transforms a 4-component vector (`v · M`), returning the raw
     /// homogeneous result **without** perspective division.
     ///
-    /// This matches DirectXMath `XMVector4Transform` — the `w` component is
+    /// The `w` component is
     /// carried through transparently. For a direction vector (`w = 0`) the
     /// result is unaffected by the translation row and never panics.
     #[inline]
@@ -425,7 +425,8 @@ impl<T: FloatNum> Matrix4<T> {
 
     /// Builds a left-handed look-at view matrix (camera space forward `= +Z`).
     ///
-    /// Matches DirectXMath `XMMatrixLookAtLH`.
+    /// Row-vector convention: the rotation basis occupies rows 0..2 and the
+    /// eye translation lives in the last row `m[3][0..2]` (= `-(eye·right/up/forward)`).
     #[inline]
     pub fn look_at_lh(eye: Vector3<T>, target: Vector3<T>, up: Vector3<T>) -> Self {
         let r2 = (target - eye).normalize_or_zero();
@@ -434,16 +435,16 @@ impl<T: FloatNum> Matrix4<T> {
         let neg_eye = -eye;
         Self {
             m: [
-                [r0.x, r0.y, r0.z, r0.dot(&neg_eye)],
-                [r1.x, r1.y, r1.z, r1.dot(&neg_eye)],
-                [r2.x, r2.y, r2.z, r2.dot(&neg_eye)],
-                [T::ZERO, T::ZERO, T::ZERO, T::ONE],
+                [r0.x, r0.y, r0.z, T::ZERO],
+                [r1.x, r1.y, r1.z, T::ZERO],
+                [r2.x, r2.y, r2.z, T::ZERO],
+                [r0.dot(&neg_eye), r1.dot(&neg_eye), r2.dot(&neg_eye), T::ONE],
             ],
         }
     }
 
     /// Builds a left-handed perspective matrix mapping depth to `[0, 1]`
-    /// (D3D convention). Matches DirectXMath `XMMatrixPerspectiveFovLH`.
+    /// (D3D convention).
     ///
     /// Note: the depth mapping uses `m[2][2] = far/(far-near)` and
     /// `m[2][3] = 1`. (`m[3][2] = -m[2][2]*near` is the near-plane offset.)
@@ -465,8 +466,7 @@ impl<T: FloatNum> Matrix4<T> {
         }
     }
 
-    /// Builds a left-handed orthographic matrix. Matches DirectXMath
-    /// `XMMatrixOrthographicLH`.
+    /// Builds a left-handed orthographic matrix.
     #[inline]
     pub fn ortho_lh(width: T, height: T, near: T, far: T) -> Self {
         let f_range = T::ONE / (far - near);
@@ -636,7 +636,28 @@ mod tests {
     }
 
     #[test]
-    fn ortho_lh_matches_dxmath() {
+    fn look_at_lh_non_origin_eye_translation_row() {
+        // Eye on +Z looking at origin: camera-space origin must be the eye,
+        // and the world origin (target) must end up in front (+Z) of the camera.
+        let m = Matrix4F::look_at_lh(
+            Vector3::new(0.0, 0.0, 5.0),
+            Vector3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+        );
+        // Row-vector convention: translation lives in m[3][0..2]; last column is unit.
+        assert!((m.m[3][3] - 1.0).abs() < 1e-6);
+        assert!(m.m[0][3].abs() < 1e-6 && m.m[1][3].abs() < 1e-6 && m.m[2][3].abs() < 1e-6);
+        // Eye maps to the camera-space origin.
+        let eye_space = m.transform_point(Vector3::new(0.0, 0.0, 5.0));
+        assert!(eye_space.approx_eq(&Vector3::new(0.0, 0.0, 0.0), 1e-5));
+        // Target (world origin) maps to +Z in front of the camera.
+        let target_space = m.transform_point(Vector3::new(0.0, 0.0, 0.0));
+        assert!(target_space.z > 0.0);
+        assert!(target_space.x.abs() < 1e-5 && target_space.y.abs() < 1e-5);
+    }
+
+    #[test]
+    fn ortho_lh_depth_mapping() {
         let m = Matrix4F::ortho_lh(800.0, 600.0, 0.1, 100.0);
         assert!((m.m[0][0] - 2.0 / 800.0).abs() < 1e-6);
         assert!((m.m[1][1] - 2.0 / 600.0).abs() < 1e-6);
