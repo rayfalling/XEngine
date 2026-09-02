@@ -42,6 +42,11 @@ impl Column {
         self.len == 0
     }
 
+    /// The registered descriptor governing this column.
+    pub fn descriptor(&self) -> &ComponentDescriptor {
+        &self.desc
+    }
+
     fn elem_size(&self) -> usize {
         self.desc.size.max(1)
     }
@@ -258,6 +263,7 @@ mod tests {
             align: std::mem::align_of::<DropCounter>(),
             scriptable: false,
             drop_fn: Some(drop_fn),
+            hooks: None,
         };
         let vals = [DropCounter(1), DropCounter(2)];
         let mut col = Column::new(desc);

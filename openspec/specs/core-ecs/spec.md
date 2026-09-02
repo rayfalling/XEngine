@@ -15,19 +15,32 @@ World SHALL 以 `(index: u32, generation: u32)` 唯一标识实体。创建 SHAL
 - **THEN** 该 index 不再分发新实体，且旧句柄访问返回 `Err(StaleEntity)`
 
 ### Requirement: 组件类型运行时注册（type-id 扩展）
-World SHALL 提供组件类型注册表，以 `TypeId` 为键注册组件类型，注册项 MUST 含 `size`、`align`、`drop` 函数与可选的 `scriptable` 标记。组件类型必须允许运行时注册（编译器之外），脚本组件（`scriptable = true`，type-erased payload）必须走同一注册路径。重复注册同一 TypeId 必须返回错误。注册表驱动所有 create/add/查询路径。
+- OLD: World SHALL 提供组件类型注册表，以 `TypeId` 为键注册组件类型，注册项 MUST 含 `size`、`align`、`drop` 函数与可选的 `scriptable` 标记。组件类型必须允许运行时注册（编译器之外），脚本组件（`scriptable = true`，type-erased payload）必须走同一注册路径。重复注册同一 TypeId 必须返回错误。注册表驱动所有 create/add/查询路径。
+- NEW: World SHALL 提供组件类型注册表，以 `TypeId` 为键注册组件类型，注册项 MUST 含 `size`、`align`、`drop` 函数与可选的 `scriptable` 标记。组件类型必须允许运行时注册（编译器之外），脚本组件（`scriptable = true`，type-erased payload）必须走同一注册路径。重复注册同一 TypeId 必须返回错误。注册表驱动所有 create/add/查询路径。组件类型 MAY 实现 `Component` trait（`pub trait Component: 'static`，见下）携带生命周期钩子；此时经 `register_component::<T: Component>()` 显式注册，描述符 `hooks` 字段（`Option<ComponentHooks>`，`ComponentHooks { on_add: Option<fn(*mut u8, *mut ())>, on_remove: Option<fn(*mut u8, *mut ())> }`，双参 = 组件数据指针 + 生命周期上下文指针）非空；未实现/未注册 hooks 必为 `None`（既有注册路径零影响）。
 
-#### Scenario: 运行时注册自定义组件类型
-- **WHEN** 运行期注册一个自定义组件类型（含 drop 函数）
-- **THEN** 该类型可立即用于 create/add/查询，实体销毁时 drop 函数被调用
+#### Scenario: 钩子生命周期触发（含上下文）
+- **WHEN** 带钩子组件经 `add` 成功加入实体、随后 `remove::<T>`、再 `destroy`（存在绑定的生命周期上下文指针）
+- **THEN** 每次 add 完成后在组件数据地址上调用一次 `on_add(ptr, ctx)`；remove 时对 T 删除**前**调用一次 `on_remove(ptr, ctx)`；destroy 时对每个组件在其 drop 前调用 `on_remove` 恰一次；`ctx` 恒为绑定的上下文指针（如场景指针）
 
-#### Scenario: 脚本组件注册
-- **WHEN** 运行期注册 `scriptable = true` 的组件类型（payload 为 type-erased 字节）
-- **THEN** 该组件按与普通组件相同的生命周期语义存取，且保留 `scriptable` 标记供脚本运行时使用
+#### Scenario: 迁移不触发钩子
+- **WHEN** 实体经 `add`/`remove` 触发 archetype 迁移，其余未删除组件的行被 bitwise 移动
+- **THEN** 被移动（未删除）组件 MUST NOT 触发 `on_remove`/`on_add`；仅新增组件触发 `on_add`、仅被删除组件触发 `on_remove`
 
-#### Scenario: 重复注册报错
-- **WHEN** 对同一 TypeId 二次注册
-- **THEN** 返回注册错误，且第一次注册的类型与存储不受影响
+#### Scenario: Commands 路径同样触发
+- **WHEN** 系统内经 `Commands` 排队 add/remove/destroy 并在边界 flush
+- **THEN** 钩子与同步 API 语义一致触发（flush 时按入队序，每个操作恰一次）
+
+#### Scenario: 无钩子类型零影响
+- **WHEN** 既有类型通过 `register::<T>()` 或自动注册路径注册并使用（hooks None）
+- **THEN** 行为与旧版完全一致（不调用任何钩子函数），drop 语义不变
+
+#### Scenario: 重复注册钩子路径
+- **WHEN** 同一 TypeId 先 `register_component` 再 `register`（或反向）
+- **THEN** 第二次注册返回重复注册错误；第一次的钩子/描述符保持
+
+#### Scenario: 上下文绑定
+- **WHEN** 世界经场景封装绑定生命周期上下文指针（要求 `SceneHandle`/`Pin<Box<Scene>>` 等稳定地址，单线程，绑定路径为 crate 内部）
+- **THEN** 之后所有钩子调用收到该指针；未绑定上下文时钩子调用得到 null 指针（实现 MUST 跳过调用或传 null，由 go 层保证绑定前不触发）
 
 ### Requirement: 生命周期函数与语义
 World SHALL 提供 `create`、`destroy`、`add`、`remove`、`get/get_mut`、`contains`、`iterate`、`query`、`clear` 生命周期函数（clean 定义：create 可带初始组件、允许空；destroy 销毁实体：组件 drop → 移入回收表 → 复用槽位；add 批量添加组件；remove 移除组件、实体保留）。语义 MUST 如下：重复 `add` 同一组件返回 `Err(InsertAlreadyExists)` 且状态不变；`remove` 不存在的组件 MUST no-op 幂等；世代不匹配句柄访问 MUST 返回 `Err(StaleEntity)`，而 `destroy` 对已销毁/失效句柄 MUST 幂等返回 `Ok`；`destroy`/`clear` MUST 按组件注册顺序执行 drop 且每个实体只 drop 一次；`clear` MUST 销毁全部实体并保留空 archetype 结构。

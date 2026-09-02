@@ -2,10 +2,10 @@
 
 use std::time::Duration;
 
+use crate::go::Scene;
 use crate::render::RenderSnapshot;
 use crate::schedule::Schedule;
 use crate::system::Stage;
-use crate::world::World;
 
 /// Fixed logical step boundary (user decision: 1/60s; configurable).
 pub const DEFAULT_FIXED_STEP: Duration = Duration::from_nanos(1_000_000_000 / 60);
@@ -62,9 +62,9 @@ pub struct RunStats {
     pub fixed_runs: usize,
 }
 
-/// The engine: owns the world and runs the schedule per frame.
+/// The engine: owns the scene (and its world) and runs the schedule per frame.
 pub struct Engine {
-    world: World,
+    scene: crate::go::scene::SceneHandle,
     schedule: Schedule,
     mode: FrameMode,
     fixed_step: Duration,
@@ -74,9 +74,9 @@ pub struct Engine {
 
 impl Engine {
     /// Creates an engine with the default fixed step (1/60s).
-    pub fn new(world: World, schedule: Schedule, mode: FrameMode) -> Self {
+    pub fn new(scene: crate::go::scene::SceneHandle, schedule: Schedule, mode: FrameMode) -> Self {
         Self {
-            world,
+            scene,
             schedule,
             mode,
             fixed_step: DEFAULT_FIXED_STEP,
@@ -104,12 +104,12 @@ impl Engine {
         self.mode = mode;
     }
 
-    pub fn world(&self) -> &World {
-        &self.world
+    pub fn scene(&self) -> &Scene {
+        &self.scene
     }
 
-    pub fn world_mut(&mut self) -> &mut World {
-        &mut self.world
+    pub fn scene_mut(&mut self) -> &mut Scene {
+        &mut self.scene
     }
 
     /// Resets the fixed-step accumulator (e.g. after a long pause).
@@ -133,17 +133,23 @@ impl Engine {
             }
             self.accumulator -= self.fixed_step;
             fixed_runs += 1;
-            self.schedule.run_stage(&mut self.world, Stage::FixedUpdate);
+            let scene = &mut self.scene;
+            self.schedule
+                .run_stage(scene.world_mut(), Stage::FixedUpdate);
         }
         // Publish time bookkeeping before the frame-update systems.
-        self.world.insert_resource(TimeState {
+        let scene = &mut self.scene;
+        scene.world_mut().insert_resource(TimeState {
             frame: self.frame,
             dt,
             fixed_step: self.fixed_step,
             fixed_runs,
         });
-        self.schedule.run_stage(&mut self.world, Stage::Update);
-        self.schedule.run_stage(&mut self.world, Stage::PostUpdate);
+        let scene = &mut self.scene;
+        self.schedule.run_stage(scene.world_mut(), Stage::Update);
+        let scene = &mut self.scene;
+        self.schedule
+            .run_stage(scene.world_mut(), Stage::PostUpdate);
         RunStats {
             frame: self.frame,
             dt,
@@ -160,6 +166,7 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::go::SceneHandle;
     use crate::schedule::Schedule;
     use crate::system::System;
 
@@ -214,7 +221,7 @@ mod tests {
         };
         let schedule = Schedule::build(vec![fixed, update, post]).unwrap();
         let mut engine = Engine::new(
-            World::new(),
+            SceneHandle::new(),
             schedule,
             FrameMode::Uncapped {
                 max_dt: Duration::from_secs(1),
@@ -231,9 +238,8 @@ mod tests {
 
     #[test]
     fn fast_frame_runs_zero_fixed() {
-        let w = World::new();
         let stats = Engine::new(
-            w,
+            SceneHandle::new(),
             empty_schedule(),
             FrameMode::Uncapped {
                 max_dt: Duration::from_secs(1),
@@ -247,7 +253,7 @@ mod tests {
     #[test]
     fn mode_switch_keeps_fixed_step_constant() {
         let mut engine = Engine::new(
-            World::new(),
+            SceneHandle::new(),
             empty_schedule(),
             FrameMode::Capped { target_fps: 60 },
         );
@@ -265,14 +271,19 @@ mod tests {
     #[test]
     fn time_state_is_published_and_snapshot_available() {
         let mut engine = Engine::new(
-            World::new(),
+            SceneHandle::new(),
             empty_schedule(),
             FrameMode::Uncapped {
                 max_dt: Duration::from_secs(1),
             },
         );
         engine.tick(Duration::from_millis(16));
-        let ts = engine.world().get_resource::<TimeState>().unwrap().unwrap();
+        let ts = engine
+            .scene()
+            .world()
+            .get_resource::<TimeState>()
+            .unwrap()
+            .unwrap();
         assert_eq!(ts.frame, 1);
         assert_eq!(ts.dt, Duration::from_millis(16));
         let snap = engine.snapshot();

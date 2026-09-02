@@ -7,9 +7,11 @@
 
 pub mod archetype;
 pub mod command;
+pub mod component;
 pub mod entity;
 pub mod error;
 pub mod frame;
+pub mod go;
 pub mod registry;
 pub mod render;
 pub mod schedule;
@@ -17,9 +19,14 @@ pub mod storage;
 pub mod system;
 pub mod world;
 
+pub use component::ComponentHooks;
 pub use entity::Entity;
 pub use error::{WorldError, WorldResult};
 pub use frame::{Engine, FrameMode, RunStats, TimeState};
+pub use go::{
+    Children, Component, GameObject, GlobalTransform, GoHandle, GoHandleError, GoLoc, GoView,
+    HierarchyError, Parent, Scene, SceneHandle, SceneRef, Transform, TransformDirty,
+};
 pub use render::{NullRenderSink, RenderSink, RenderSnapshot};
 pub use schedule::{Schedule, ScheduleError};
 pub use system::{AccessKind, Stage, System};
