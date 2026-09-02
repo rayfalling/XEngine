@@ -95,7 +95,7 @@ fn batch_destroy_keeps_remaining_entities_consistent() {
     // 已销毁句柄全部失效（不是 stale 数据）。
     for &e in es.iter().take(75) {
         assert!(!w.contains_entity(e));
-        assert!(matches!(w.get::<Transform>(e), Err(_)));
+        assert!(w.get::<Transform>(e).is_err());
     }
 }
 
