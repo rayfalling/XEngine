@@ -8,3 +8,6 @@
 # OS
 Thumbs.db
 .DS_Store
+
+# Agent worktree checkouts
+.wt-*/
