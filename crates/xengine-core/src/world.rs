@@ -91,7 +91,7 @@ impl World {
     /// matches the type the registered hooks will cast it to (the GO layer
     /// binds `&mut Scene` via `Pin<Box<Scene>>`). A dangling or moving pointer
     /// results in undefined behavior when a hook fires. Hooks run single-threaded.
-    pub unsafe fn bind_hook_context(&mut self, ctx: *mut ()) {
+    pub(crate) unsafe fn bind_hook_context(&mut self, ctx: *mut ()) {
         self.hook_context = Some(ctx);
     }
 

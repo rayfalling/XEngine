@@ -22,7 +22,7 @@
 ## Decisions
 
 ### D1 GO 语义与 Scene 概念（用户决策 + 概念修正）
-`pub type GameObject = Entity`；无包装结构；`create_go` 生成三件套实体。**概念修正（用户）：游戏对象的容器是 `Scene`（场景），不是 ECS `World`**——`Scene`（`xengine-core::go`）拥有 `World` + `scene_id` + serial 分配器；GO 生命周期/层级/传播/包装层访问全部经 Scene。`Engine`（core-frame）改为持有 `Scene`（`Pin<Box<Scene>>`），tick 与调度语义不变（系统仍 `&mut World`；Engine 内部经 scene 桥接）。**备选**：包装句柄（脚本层便利，后续脚本变更引入；核心不引）、Scene 仅作引用标记（不承载 World——否决：场景即游戏运行时容器）。
+`pub type GameObject = Entity`；无包装结构；`create_go` 生成三件套实体。**概念修正（用户）：游戏对象的容器是 `Scene`（场景），不是 ECS `World`**——`Scene`（`xengine-core::go`）拥有 `World` + `scene_id` + serial 分配器；GO 生命周期/层级/传播/包装层访问全部经 Scene。`Engine`（core-frame）改为持有 `SceneHandle`，tick 与调度语义不变（系统仍 `&mut World`；Engine 内部经 scene 桥接）。**备选**：包装句柄（脚本层便利，后续脚本变更引入；核心不引）、Scene 仅作引用标记（不承载 World——否决：场景即游戏运行时容器）。
 
 ### D2 三组件字段（用户决策 + 本变更定稿）
 - `Transform { position: Vector3F, rotate: QuaternionF, scale: Vector3F }`（用户命名 rotate；局部 TRS；数学约定由 core-math 锁定）
@@ -31,7 +31,7 @@
 
 ### D3 Component 钩子（用户决策：scene 必要传入；world 不另传）
 - `trait Component: 'static { fn on_add(&mut self, scene: &mut Scene) {} fn on_remove(&mut self, scene: &mut Scene) {} }`（默认空实现）
-- **机制**：core ECS 不感知 `Scene` 类型——描述符存 type-erased 双参钩子 `fn(*mut u8, *mut ())`（组件数据指针 + 生命周期上下文指针）；`World::bind_hook_context(ctx)` 注入（单线程）；`Scene::new() -> Pin<Box<Scene>>` 固定地址后绑定自身指针；钩子执行时 `*mut ()` 还原为 `&mut Scene`（unsafe 收敛于 go 层分发函数 + `# Safety` 文档；单线程约束入文档）
+- **机制**：core ECS 不感知 `Scene` 类型——描述符存 type-erased 双参钩子 `fn(*mut u8, *mut ())`（组件数据指针 + 生命周期上下文指针）；`World::bind_hook_context(ctx)` 注入（单线程）；`SceneHandle::new()`（`SceneHandle` = 唯一安全句柄，私有 `Pin<Box<Scene>>` + `DerefMut` 单点 `unsafe`）固定地址后绑定自身指针；钩子执行时 `*mut ()` 还原为 `&mut Scene`（unsafe 收敛于 go 层分发函数 + `# Safety` 文档；单线程约束入文档）
 - 触发点：`on_add`——add 成功（值入列）后；`on_remove`——remove/destroy/clear 真正删除前（`Column::remove_swap`/`drop_at` 统一入口）；**`move_swap`/`take_bytes`（迁移）不触发**；Commands flush 路径同语义；未绑定上下文时跳过（go 层保证绑定先于任何触发）
 - **备选**：事件化（延迟消费 → 组件行可能已迁移，不安全，×）；钩子移出 core 由 Scene 包装（拦不住 Commands flush 路径，×）；带 `&mut World` 参数（用户否决：world 不必要传入，Scene 即上下文）
 
@@ -59,7 +59,7 @@ HierarchyMaintain / TransformPropagate 挂 PostUpdate（游戏逻辑更新后、
 ## Migration Plan
 
 1. `xengine-core`：新增 `component.rs`（trait + hooks 描述符扩展 + register_component）+ world.rs 触发点与 `bind_hook_context` + 单测（匹配/迁移/无钩子/Commands 场景）
-2. `Scene`（go 模块）：拥有 World + scene_id/serial 分配 + `Pin<Box<Scene>>` + 上下文绑定；`Engine` 改为持有 Scene（tick 桥接、调度不变）
+2. `SceneHandle`/`Scene`（go 模块）：拥有 World + scene_id/serial 分配 + 私有 `Pin<Box<Scene>>` 与内部上下文绑定；`Engine` 改为持有 `SceneHandle`（tick 桥接、调度不变）
 3. GO 模块：套餐组件（Transform/SceneRef/Parent/Children）+ create_go + 层级维护 + destroy 级联/detach + 传播（dirty）+ GoHandle；单测伴随
 4. 依赖：xengine-core → xengine-math（等 core-math-primitives 实现 MR 合入后再切主分支依赖；期间用路径依赖）
 5. `cargo test` 全绿；clippy/fmt；扩展 go_access 基准为 GoHandle 档

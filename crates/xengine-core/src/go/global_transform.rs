@@ -161,7 +161,7 @@ pub fn transform_propagate_system() -> System {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::go::scene::Scene;
+    use crate::go::scene::{Scene, SceneHandle};
     use xengine_math::{QuaternionF, Vector3F};
 
     /// Builds a chain root -> mid -> leaf via the Scene API and returns the
@@ -182,9 +182,8 @@ mod tests {
 
     #[test]
     fn root_rotation_moves_child() {
-        let mut scene = Scene::new();
-        let scene = unsafe { Scene::pinned_mut(&mut scene) };
-        let [root, _, leaf] = build_chain(scene, Vector3F::ZERO);
+        let mut scene = SceneHandle::new();
+        let [root, _, leaf] = build_chain(&mut scene, Vector3F::ZERO);
         // Give the leaf a local position (1,0,0).
         scene
             .set_transform_position(leaf, Vector3F::new(1.0, 0.0, 0.0))
@@ -230,9 +229,8 @@ mod tests {
 
     #[test]
     fn dirty_subtree_cascades_and_resets() {
-        let mut scene = Scene::new();
-        let scene = unsafe { Scene::pinned_mut(&mut scene) };
-        let [root, mid, leaf] = build_chain(scene, Vector3F::ZERO);
+        let mut scene = SceneHandle::new();
+        let [root, mid, leaf] = build_chain(&mut scene, Vector3F::ZERO);
         for e in [root, mid, leaf] {
             scene
                 .world_mut()
@@ -280,9 +278,8 @@ mod tests {
 
     #[test]
     fn leaf_change_does_not_touch_ancestors() {
-        let mut scene = Scene::new();
-        let scene = unsafe { Scene::pinned_mut(&mut scene) };
-        let [root, mid, leaf] = build_chain(scene, Vector3F::ZERO);
+        let mut scene = SceneHandle::new();
+        let [root, mid, leaf] = build_chain(&mut scene, Vector3F::ZERO);
         for e in [root, mid, leaf] {
             scene
                 .world_mut()
@@ -295,8 +292,8 @@ mod tests {
                 .unwrap();
         }
         // Set a sentinel on root/mid so an accidental recompute would overwrite it.
-        sentinel_world(scene, root, Vector3F::new(99.0, 0.0, 0.0));
-        sentinel_world(scene, mid, Vector3F::new(88.0, 0.0, 0.0));
+        sentinel_world(&mut scene, root, Vector3F::new(99.0, 0.0, 0.0));
+        sentinel_world(&mut scene, mid, Vector3F::new(88.0, 0.0, 0.0));
         // Mark only the leaf dirty.
         scene
             .set_transform_position(leaf, Vector3F::new(0.0, 0.0, 0.0))
@@ -332,9 +329,8 @@ mod tests {
 
     #[test]
     fn ancestor_independent_computation() {
-        let mut scene = Scene::new();
-        let scene = unsafe { Scene::pinned_mut(&mut scene) };
-        let [root, mid, leaf] = build_chain(scene, Vector3F::ZERO);
+        let mut scene = SceneHandle::new();
+        let [root, mid, leaf] = build_chain(&mut scene, Vector3F::ZERO);
         for e in [root, mid, leaf] {
             scene
                 .world_mut()
@@ -372,9 +368,8 @@ mod tests {
 
     #[test]
     fn unmarked_direct_write_is_not_propagated() {
-        let mut scene = Scene::new();
-        let scene = unsafe { Scene::pinned_mut(&mut scene) };
-        let [_, _, leaf] = build_chain(scene, Vector3F::ZERO);
+        let mut scene = SceneHandle::new();
+        let [_, _, leaf] = build_chain(&mut scene, Vector3F::ZERO);
         scene
             .world_mut()
             .add(
@@ -401,9 +396,8 @@ mod tests {
 
     #[test]
     fn no_global_transform_entity_is_skipped() {
-        let mut scene = Scene::new();
-        let scene = unsafe { Scene::pinned_mut(&mut scene) };
-        let [root, _, leaf] = build_chain(scene, Vector3F::ZERO);
+        let mut scene = SceneHandle::new();
+        let [root, _, leaf] = build_chain(&mut scene, Vector3F::ZERO);
         // root has GlobalTransform; mid/leaf do not.
         scene
             .world_mut()
@@ -442,8 +436,7 @@ mod tests {
         use crate::schedule::Schedule;
         use crate::system::Stage;
 
-        let mut scene = Scene::new();
-        let scene = unsafe { Scene::pinned_mut(&mut scene) };
+        let mut scene = SceneHandle::new();
         let root = scene.create_go(Transform::default()).unwrap();
         let mid = scene.create_go(Transform::default()).unwrap();
         let _leaf = scene.create_go(Transform::default()).unwrap();

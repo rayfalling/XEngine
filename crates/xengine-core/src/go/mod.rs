@@ -26,6 +26,6 @@ pub use component::Component;
 pub use global_transform::{GlobalTransform, TransformDirty};
 pub use go_handle::{GoHandle, GoHandleError, GoLoc, GoView};
 pub use hierarchy::{Children, HierarchyError, Parent};
-pub use scene::{GameObject, Scene};
+pub use scene::{GameObject, Scene, SceneHandle};
 pub use scene_ref::SceneRef;
 pub use transform::Transform;

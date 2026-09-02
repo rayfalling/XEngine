@@ -39,7 +39,7 @@ World SHALL 以 `(index: u32, generation: u32)` 唯一标识实体。创建 SHAL
 - **THEN** 第二次注册返回重复注册错误；第一次的钩子/描述符保持
 
 #### Scenario: 上下文绑定
-- **WHEN** 世界绑定生命周期上下文指针（`World::bind_hook_context`，要求 `Pin<Box<Scene>>` 等稳定地址，单线程）
+- **WHEN** 世界经场景封装绑定生命周期上下文指针（要求 `SceneHandle`/`Pin<Box<Scene>>` 等稳定地址，单线程，绑定路径为 crate 内部）
 - **THEN** 之后所有钩子调用收到该指针；未绑定上下文时钩子调用得到 null 指针（实现 MUST 跳过调用或传 null，由 go 层保证绑定前不触发）
 
 ### Requirement: 生命周期函数与语义

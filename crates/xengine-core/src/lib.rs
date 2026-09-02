@@ -25,7 +25,7 @@ pub use error::{WorldError, WorldResult};
 pub use frame::{Engine, FrameMode, RunStats, TimeState};
 pub use go::{
     Children, Component, GameObject, GlobalTransform, GoHandle, GoHandleError, GoLoc, GoView,
-    HierarchyError, Parent, Scene, SceneRef, Transform, TransformDirty,
+    HierarchyError, Parent, Scene, SceneHandle, SceneRef, Transform, TransformDirty,
 };
 pub use render::{NullRenderSink, RenderSink, RenderSnapshot};
 pub use schedule::{Schedule, ScheduleError};

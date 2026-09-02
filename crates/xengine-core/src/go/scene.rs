@@ -3,7 +3,7 @@
 //! A `Scene` owns an ECS [`World`](crate::World), allocates a globally-unique
 //! `scene_id`, and a scene-local monotonic `serial` sequence. Every GO-side
 //! lifecycle / hierarchy / propagation / wrapper access goes through it. It is
-//! driven from a single thread; `Scene::new` returns a `Pin<Box<Scene>>` so the
+//! driven from a single thread; `SceneHandle::new` returns the only safe handle; `Pin<Box<Scene>>` stays
 //! heap address is stable for the hook-context binding.
 
 use std::collections::HashSet;
@@ -40,46 +40,81 @@ pub struct Scene {
     _pin: std::marker::PhantomPinned,
 }
 
-impl Scene {
+/// The only safe handle to a `Scene` (zero-overhead smart pointer).
+///
+/// `SceneHandle` is the sole construction path for a `Scene`. Its private
+/// `Pin<Box<Scene>>` field, together with `Scene: !Unpin`, makes it impossible
+/// to move out or replace the heap value from safe code — exactly the
+/// invariant the world's hook-context pointer relies on. `Deref`/`DerefMut`
+/// borrow the scene like a smart pointer, so every access on this handle is
+/// fully safe.
+pub struct SceneHandle {
+    inner: Pin<Box<Scene>>,
+}
+
+impl std::fmt::Debug for SceneHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "SceneHandle({:p})",
+            self.inner.as_ref().get_ref() as *const Scene
+        )
+    }
+}
+
+impl SceneHandle {
     /// Creates a new `Scene`, allocating a globally-unique `scene_id` and
     /// binding its own (heap-stable) address as the world's hook context.
     ///
-    /// The scene is single-threaded: it must be driven from one thread. Its
-    /// heap address (from the `Pin<Box<Scene>>`) is what component-lifecycle
-    /// hooks receive as their context, so it must not move — the `!Unpin`
-    /// marker enforces that `Pin::into_inner` is unavailable.
-    pub fn new() -> Pin<Box<Scene>> {
+    /// The scene is single-threaded: it must be driven from one thread. The
+    /// `!Unpin` marker guarantees the bound pointer stays valid.
+    pub fn new() -> Self {
         let scene_id = NEXT_SCENE_ID.fetch_add(1, Ordering::Relaxed);
-        let mut boxed = Box::new(Scene {
+        let mut boxed = Box::pin(Scene {
             world: World::new(),
             scene_id,
             serial_counter: 0,
             _pin: std::marker::PhantomPinned,
         });
-        let ctx = &mut *boxed as *mut Scene;
-        // Safety: `boxed` is a `Box` whose address is stable for the box's
-        // lifetime and the pointer is never invalidated before `Scene` drops
-        // (the box is immediately pinned and never moved).
-        unsafe { boxed.world.bind_hook_context(ctx as *mut ()) };
-        Pin::from(boxed)
+        let ctx = boxed.as_ref().get_ref() as *const Scene as *mut Scene;
+        // Safety: `boxed` is a `Pin<Box>` whose address is stable for the
+        // box's lifetime and the pointer is never invalidated before `Scene`
+        // drops; `SceneHandle` is the only path that can construct a Scene.
+        unsafe {
+            boxed
+                .as_mut()
+                .get_unchecked_mut()
+                .world
+                .bind_hook_context(ctx as *mut ())
+        };
+        Self { inner: boxed }
     }
+}
 
-    /// `&mut` access through a pinned box.
-    ///
-    /// The GO layer binds the world's hook-context pointer to this heap value,
-    /// so the `Scene` must never move or be replaced; the pinned box (the only
-    /// construction path) keeps the value's address structurally stable.
-    ///
-    /// # Safety
-    /// The caller must keep the pinned box alive and must not replace or
-    /// otherwise move the heap value for as long as the world lives.
-    pub unsafe fn pinned_mut(pin: &mut Pin<Box<Scene>>) -> &mut Scene {
-        // Safety: `get_unchecked_mut` is fine because a `Pin<Box>` keeps its
-        // heap value structurally in place; the caller's contract covers the
-        // "never replace the value" requirement.
-        unsafe { pin.as_mut().get_unchecked_mut() }
+impl Default for SceneHandle {
+    fn default() -> Self {
+        Self::new()
     }
+}
 
+impl std::ops::Deref for SceneHandle {
+    type Target = Scene;
+    fn deref(&self) -> &Scene {
+        &self.inner
+    }
+}
+
+impl std::ops::DerefMut for SceneHandle {
+    fn deref_mut(&mut self) -> &mut Scene {
+        // Safety: `SceneHandle` is the sole owner of the `Scene`; its private
+        // `Pin<Box<Scene>>` field cannot be moved out or replaced from safe
+        // code, and `Scene: !Unpin` prevents `into_inner`-style escapes. The
+        // heap value therefore stays at one address for the handle's lifetime.
+        unsafe { self.inner.as_mut().get_unchecked_mut() }
+    }
+}
+
+impl Scene {
     /// Shared access to the ECS world.
     pub fn world(&self) -> &World {
         &self.world
@@ -430,8 +465,8 @@ mod tests {
 
     #[test]
     fn scene_allocates_unique_id_and_binds_context() {
-        let a = Scene::new();
-        let b = Scene::new();
+        let a = SceneHandle::new();
+        let b = SceneHandle::new();
         assert_ne!(a.scene_id(), b.scene_id(), "scene ids are globally unique");
         // Global ids are strictly increasing; exact values depend on the test
         // run's parallel scene creation, so only their ordering is asserted.
@@ -440,8 +475,7 @@ mod tests {
 
     #[test]
     fn create_go_generates_the_trio() {
-        let mut scene = Scene::new();
-        let scene = unsafe { Scene::pinned_mut(&mut scene) };
+        let mut scene = SceneHandle::new();
         let e = scene.create_go(Transform::default()).unwrap();
         let w = scene.world();
         assert!(w.contains::<Transform>(e).unwrap());
@@ -452,8 +486,7 @@ mod tests {
 
     #[test]
     fn scene_ref_auto_fill() {
-        let mut scene = Scene::new();
-        let scene = unsafe { Scene::pinned_mut(&mut scene) };
+        let mut scene = SceneHandle::new();
         let e1 = scene.create_go(Transform::default()).unwrap();
         let e2 = scene.create_go(Transform::default()).unwrap();
         let r1 = scene.world().get::<SceneRef>(e1).unwrap().unwrap();
@@ -467,8 +500,7 @@ mod tests {
 
     #[test]
     fn set_parent_bidirectional_and_reparent() {
-        let mut scene = Scene::new();
-        let scene = unsafe { Scene::pinned_mut(&mut scene) };
+        let mut scene = SceneHandle::new();
         let e1 = scene.create_go(Transform::default()).unwrap();
         let e2 = scene.create_go(Transform::default()).unwrap();
         let e3 = scene.create_go(Transform::default()).unwrap();
@@ -513,8 +545,7 @@ mod tests {
 
     #[test]
     fn set_parent_cycle_is_rejected() {
-        let mut scene = Scene::new();
-        let scene = unsafe { Scene::pinned_mut(&mut scene) };
+        let mut scene = SceneHandle::new();
         let a = scene.create_go(Transform::default()).unwrap();
         let b = scene.create_go(Transform::default()).unwrap();
         scene.set_parent(b, Some(a)).unwrap();
@@ -533,8 +564,7 @@ mod tests {
 
     #[test]
     fn destroy_cascades_depth_first() {
-        let mut scene = Scene::new();
-        let scene = unsafe { Scene::pinned_mut(&mut scene) };
+        let mut scene = SceneHandle::new();
         let root = scene.create_go(Transform::default()).unwrap();
         let mid = scene.create_go(Transform::default()).unwrap();
         let leaf = scene.create_go(Transform::default()).unwrap();
@@ -549,8 +579,7 @@ mod tests {
 
     #[test]
     fn detach_keeps_subtree_and_roots_it() {
-        let mut scene = Scene::new();
-        let scene = unsafe { Scene::pinned_mut(&mut scene) };
+        let mut scene = SceneHandle::new();
         let root = scene.create_go(Transform::default()).unwrap();
         let mid = scene.create_go(Transform::default()).unwrap();
         let leaf = scene.create_go(Transform::default()).unwrap();
@@ -576,8 +605,7 @@ mod tests {
 
     #[test]
     fn world_destroy_single_entity_is_not_cascade() {
-        let mut scene = Scene::new();
-        let scene = unsafe { Scene::pinned_mut(&mut scene) };
+        let mut scene = SceneHandle::new();
         let root = scene.create_go(Transform::default()).unwrap();
         let mid = scene.create_go(Transform::default()).unwrap();
         scene.set_parent(mid, Some(root)).unwrap();
@@ -588,8 +616,7 @@ mod tests {
 
     #[test]
     fn set_transform_marks_dirty() {
-        let mut scene = Scene::new();
-        let scene = unsafe { Scene::pinned_mut(&mut scene) };
+        let mut scene = SceneHandle::new();
         let e = scene.create_go(Transform::default()).unwrap();
         assert!(!scene.world().contains::<TransformDirty>(e).unwrap());
         scene
@@ -600,8 +627,7 @@ mod tests {
 
     #[test]
     fn go_handle_and_view_roundtrip() {
-        let mut scene = Scene::new();
-        let scene = unsafe { Scene::pinned_mut(&mut scene) };
+        let mut scene = SceneHandle::new();
         let e = scene
             .create_go(Transform {
                 position: Vector3F::new(4.0, 5.0, 6.0),
@@ -623,8 +649,7 @@ mod tests {
 
     #[test]
     fn go_view_after_migration_re_resolves() {
-        let mut scene = Scene::new();
-        let scene = unsafe { Scene::pinned_mut(&mut scene) };
+        let mut scene = SceneHandle::new();
         let e = scene.create_go(Transform::default()).unwrap();
         let handle = scene.go_handle(e);
         // Migration: add a marker component -> the entity moves archetypes.
@@ -639,8 +664,7 @@ mod tests {
 
     #[test]
     fn go_view_after_destroy_is_stale() {
-        let mut scene = Scene::new();
-        let scene = unsafe { Scene::pinned_mut(&mut scene) };
+        let mut scene = SceneHandle::new();
         let e = scene.create_go(Transform::default()).unwrap();
         let handle = scene.go_handle(e);
         scene.destroy(e).unwrap();

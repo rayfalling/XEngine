@@ -35,7 +35,7 @@ pub trait Component: 'static {
 ///
 /// * The core world guarantees `data` points at a live `T` inside a column
 ///   and `ctx` is the pointer bound by `World::bind_hook_context`.
-/// * The GO layer guarantees that context is a stable `Pin<Box<Scene>>` from
+/// * The GO layer guarantees that context is a stable `SceneHandle` (an
 ///   `Scene::new`, driven from a single thread, and that the hook does not
 ///   structurally mutate the same world's layout re-entrantly during its own
 ///   call (single-threaded contract, documented on [`Scene`]).

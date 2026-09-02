@@ -120,13 +120,12 @@ impl<'a> GoView<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::go::scene::Scene;
+    use crate::go::scene::SceneHandle;
     use crate::go::transform::Transform;
 
     #[test]
     fn handle_display_and_entity() {
-        let mut scene = Scene::new();
-        let scene = unsafe { Scene::pinned_mut(&mut scene) };
+        let mut scene = SceneHandle::new();
         let e = scene.create_go(Transform::default()).unwrap();
         let handle = scene.go_handle(e);
         assert_eq!(handle.entity(), e);

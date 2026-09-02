@@ -1,4 +1,4 @@
-use xengine_core::{AccessKind, Engine, FrameMode, Scene, Schedule, Stage, System};
+use xengine_core::{AccessKind, Engine, FrameMode, SceneHandle, Schedule, Stage, System};
 
 fn main() {
     println!("Hello, world! ({})", xengine_core::engine_name());
@@ -12,12 +12,12 @@ fn demo_engine() {
     #[derive(Debug, Clone, Copy)]
     struct Velocity(f32);
 
-    let mut scene = Scene::new();
+    let mut scene = SceneHandle::new();
     // Auto-registration path + explicit scriptable registration is covered
     // by the core test suite; here we exercise the basic loop through a scene.
     for i in 0..10 {
         // Safety: the pinned box is the only handle; its heap value never moves.
-        unsafe { Scene::pinned_mut(&mut scene) }
+        scene
             .world_mut()
             .create2(Position(i as f32), Velocity(1.0))
             .unwrap();

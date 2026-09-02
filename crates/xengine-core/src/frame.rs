@@ -1,6 +1,5 @@
 //! Frame-driven engine loop (Unity-style model) and frame-time modes.
 
-use std::pin::Pin;
 use std::time::Duration;
 
 use crate::go::Scene;
@@ -65,7 +64,7 @@ pub struct RunStats {
 
 /// The engine: owns the scene (and its world) and runs the schedule per frame.
 pub struct Engine {
-    scene: Pin<Box<Scene>>,
+    scene: crate::go::scene::SceneHandle,
     schedule: Schedule,
     mode: FrameMode,
     fixed_step: Duration,
@@ -75,7 +74,7 @@ pub struct Engine {
 
 impl Engine {
     /// Creates an engine with the default fixed step (1/60s).
-    pub fn new(scene: Pin<Box<Scene>>, schedule: Schedule, mode: FrameMode) -> Self {
+    pub fn new(scene: crate::go::scene::SceneHandle, schedule: Schedule, mode: FrameMode) -> Self {
         Self {
             scene,
             schedule,
@@ -110,8 +109,7 @@ impl Engine {
     }
 
     pub fn scene_mut(&mut self) -> &mut Scene {
-        // Safety: the engine owns the pinned box and never moves its value.
-        unsafe { crate::go::scene::Scene::pinned_mut(&mut self.scene) }
+        &mut self.scene
     }
 
     /// Resets the fixed-step accumulator (e.g. after a long pause).
@@ -135,23 +133,21 @@ impl Engine {
             }
             self.accumulator -= self.fixed_step;
             fixed_runs += 1;
-            // Safety: the engine owns the pinned box and never moves its value.
-            let scene = unsafe { crate::go::scene::Scene::pinned_mut(&mut self.scene) };
+            let scene = &mut self.scene;
             self.schedule
                 .run_stage(scene.world_mut(), Stage::FixedUpdate);
         }
         // Publish time bookkeeping before the frame-update systems.
-        // Safety: the engine owns the pinned box and never moves its value.
-        let scene = unsafe { crate::go::scene::Scene::pinned_mut(&mut self.scene) };
+        let scene = &mut self.scene;
         scene.world_mut().insert_resource(TimeState {
             frame: self.frame,
             dt,
             fixed_step: self.fixed_step,
             fixed_runs,
         });
-        let scene = unsafe { crate::go::scene::Scene::pinned_mut(&mut self.scene) };
+        let scene = &mut self.scene;
         self.schedule.run_stage(scene.world_mut(), Stage::Update);
-        let scene = unsafe { crate::go::scene::Scene::pinned_mut(&mut self.scene) };
+        let scene = &mut self.scene;
         self.schedule
             .run_stage(scene.world_mut(), Stage::PostUpdate);
         RunStats {
@@ -170,6 +166,7 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::go::SceneHandle;
     use crate::schedule::Schedule;
     use crate::system::System;
 
@@ -224,7 +221,7 @@ mod tests {
         };
         let schedule = Schedule::build(vec![fixed, update, post]).unwrap();
         let mut engine = Engine::new(
-            Scene::new(),
+            SceneHandle::new(),
             schedule,
             FrameMode::Uncapped {
                 max_dt: Duration::from_secs(1),
@@ -242,7 +239,7 @@ mod tests {
     #[test]
     fn fast_frame_runs_zero_fixed() {
         let stats = Engine::new(
-            Scene::new(),
+            SceneHandle::new(),
             empty_schedule(),
             FrameMode::Uncapped {
                 max_dt: Duration::from_secs(1),
@@ -256,7 +253,7 @@ mod tests {
     #[test]
     fn mode_switch_keeps_fixed_step_constant() {
         let mut engine = Engine::new(
-            Scene::new(),
+            SceneHandle::new(),
             empty_schedule(),
             FrameMode::Capped { target_fps: 60 },
         );
@@ -274,7 +271,7 @@ mod tests {
     #[test]
     fn time_state_is_published_and_snapshot_available() {
         let mut engine = Engine::new(
-            Scene::new(),
+            SceneHandle::new(),
             empty_schedule(),
             FrameMode::Uncapped {
                 max_dt: Duration::from_secs(1),

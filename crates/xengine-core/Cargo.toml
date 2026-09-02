@@ -16,3 +16,7 @@ harness = false
 [[bench]]
 name = "go_access"
 harness = false
+
+[[bench]]
+name = "hook_dispatch"
+harness = false

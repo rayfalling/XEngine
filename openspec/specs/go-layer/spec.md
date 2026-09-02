@@ -5,7 +5,7 @@
 
 ## Requirements
 ### Requirement: Scene 容器与 GO 语义
-`Scene` SHALL 为 GO 层的游戏对象容器（`xengine-core::go`），拥有 ECS `World`、分配 `scene_id`（全局唯一）与场景内 `serial` 序号；`Scene::new()` SHALL 返回 `Pin<Box<Scene>>`（固定地址供钩子上下文引用，单线程）。`GameObject` SHALL 为 `Entity` 的类型别名（无包装结构，实体即 GO）。GO 的创建/生命周期/层级/传播/包装层访问 MUST 经 `Scene` API 完成（ECS `World` 仍可直接操作，但钩子只保证经 Scene 的运行路径完整触发）。`Scene::create_go` SHALL 生成三组件套餐：`Transform`、`SceneRef`、`Parent`（`Children` 由层级维护系统维护）。
+`Scene` SHALL 为 GO 层的游戏对象容器（`xengine-core::go`），拥有 ECS `World`、分配 `scene_id`（全局唯一）与场景内 `serial` 序号；`SceneHandle::new()` SHALL 返回声明为 `SceneHandle`（唯一安全句柄；内部 `Pin<Box<Scene>>` 固定地址供钩子上下文引用，`Scene: !Unpin`，单线程）。`GameObject` SHALL 为 `Entity` 的类型别名（无包装结构，实体即 GO）。GO 的创建/生命周期/层级/传播/包装层访问 MUST 经 `Scene` API 完成（ECS `World` 仍可直接操作，但钩子只保证经 Scene 的运行路径完整触发）。`Scene::create_go` SHALL 生成三组件套餐：`Transform`、`SceneRef`、`Parent`（`Children` 由层级维护系统维护）。
 
 #### Scenario: create_go 组成
 - **WHEN** `scene.create_go(transform)`（SceneRef/字段自动生成）
@@ -68,7 +68,7 @@
 - **THEN** 传播正常完成、无 panic，实体没有 GlobalTransform 组件进入
 
 ### Requirement: 组件生命周期钩子（Scene 上下文）
-实现 `Component` 的组件 MAY 定义 `fn on_add(&mut self, scene: &mut Scene)` 与 `fn on_remove(&mut self, scene: &mut Scene)`（默认空实现；不单独传 World——经 `scene.world_mut()` 获取）。钩子由 ECS 层经 type-erased 双参函数指针在正确时点触发（见 core-ecs：加入后 on_add、删除前 on_remove、迁移不触发、Commands 路径一致、上下文=绑定指针）。`Scene` SHALL 承担绑定：`Scene::new()` 经 `World::bind_hook_context` 将自身地址注入，钩子执行时 `&mut Scene` 有效（`Pin<Box<Scene>>` 固定地址；单线程约束入文档）。
+实现 `Component` 的组件 MAY 定义 `fn on_add(&mut self, scene: &mut Scene)` 与 `fn on_remove(&mut self, scene: &mut Scene)`（默认空实现；不单独传 World——经 `scene.world_mut()` 获取）。钩子由 ECS 层经 type-erased 双参函数指针在正确时点触发（见 core-ecs：加入后 on_add、删除前 on_remove、迁移不触发、Commands 路径一致、上下文=绑定指针）。`SceneHandle::new()` SHALL 在内部经（crate 级的）`bind_hook_context` 将自身地址注入（外部不可再绑定），钩子执行时 `&mut Scene` 有效（`Scene: !Unpin` + `SceneHandle` 唯一构造保证地址稳定；单线程约束入文档）。
 
 #### Scenario: 钩子拿到场景
 - **WHEN** 组件 add 成功或 remove 前（组件实现 on_add/on_remove，记录 scene_id）

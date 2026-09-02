@@ -24,7 +24,7 @@ use std::hint::black_box;
 use std::time::Instant;
 
 use xengine_core::go::{Scene, Transform as GoTransform};
-use xengine_core::{Entity, World};
+use xengine_core::{Entity, SceneHandle, World};
 use xengine_math::Vector3F;
 
 // ── GO 三组件套餐（模拟形态，占用与真实接近）─────────────────────────────
@@ -243,20 +243,19 @@ fn persistent_ptr_mig(w: &mut World, entities: &[Entity], dt: f32) -> u64 {
 // ── 模式 F：正式 GoHandle（位置缓存 + 世代校验，无裸指针）────────────────
 
 fn build_go_scene() -> (
-    std::pin::Pin<std::boxed::Box<Scene>>,
+    xengine_core::go::SceneHandle,
     Vec<xengine_core::go::GoHandle>,
 ) {
-    let mut scene = Scene::new();
+    let mut scene = SceneHandle::new();
     let mut handles = Vec::with_capacity(N);
     for i in 0..N {
-        // Safety: the pinned box value never moves (single-threaded bench).
-        let e = unsafe { Scene::pinned_mut(&mut scene) }
+        let e = scene
             .create_go(GoTransform {
                 position: Vector3F::new(i as f32, 0.0, 0.0),
                 ..GoTransform::default()
             })
             .unwrap();
-        handles.push(unsafe { Scene::pinned_mut(&mut scene) }.go_handle(e));
+        handles.push(scene.go_handle(e));
     }
     (scene, handles)
 }
@@ -355,11 +354,7 @@ fn main() {
     {
         let (mut scene, handles) = build_go_scene();
         bench("F. go_handle", TICKS, || {
-            go_handle_access(
-                unsafe { Scene::pinned_mut(&mut scene) },
-                &handles,
-                1.0 / 60.0,
-            )
+            go_handle_access(&mut scene, &handles, 1.0 / 60.0)
         });
     }
 }
