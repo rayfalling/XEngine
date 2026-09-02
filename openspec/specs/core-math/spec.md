@@ -1,7 +1,8 @@
 # core-math Specification
 
 ## Purpose
-TBD - created by archiving change core-math-primitives. Update Purpose after archive.
+核心层数学基元与约定：泛型向量/四元数/矩阵/AABB 类型及其完全限定别名，D3D 风格（行主序、行向量×矩阵、左手系、forward=+Z、欧拉 YXZ）数学约定，`#[repr(C)]` + 16B/64B 双布局 FFI 契约与单测锁定项，SIMD 预留接口与数值安全语义。供 GO 层（Transform 等组件）与渲染/设备层消费。
+
 ## Requirements
 ### Requirement: 泛型数学基元与完全限定命名
 `xengine_math` SHALL 提供泛型基元 `Vector2<T>`、`Vector3<T>`、`Vector4<T>`、`Quaternion<T>`、`Matrix3<T>`、`Matrix4<T>`、`AABB<T>`（Rust 泛型对应 C++ 模板，编译期静态实例化），并 MUST 提供完整命名类型别名：`Vector2F/Vector3F/Vector4F`、`Vector2I/Vector3I/Vector4I`（i32）、`QuaternionF`、`Matrix3F/Matrix4F`、`AABBF`。公开类型名 MUST 使用全名（禁止 `Vec3f`/`QuatF`/`AabbF` 简写）。i32 变体 MUST 支持布局与分量运算，MUST NOT 提供浮点专用运算（sqrt/normalize）。

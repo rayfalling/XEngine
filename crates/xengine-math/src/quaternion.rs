@@ -1,9 +1,8 @@
 //! Generic quaternion primitives.
 //!
-//! A quaternion is stored as `(x, y, z, w)` with `w` **last** (the reference
-//! D3D-style convention). All rotation APIs assume the left-handed,
-//! `forward = +Z` convention of the crate. The public fields are the FFI layout
-//! contract.
+//! A quaternion is stored as `(x, y, z, w)` with `w` **last**.
+//! convention). All rotation APIs assume the left-handed, `forward = +Z`
+//! convention of the crate. The public fields are the FFI layout contract.
 
 use crate::matrix::{Matrix3, Matrix4};
 use crate::scalar::{FloatNum, ScalarNum};
@@ -92,7 +91,7 @@ impl<T: FloatNum> Quaternion<T> {
     /// Builds a quaternion from euler angles in **YXZ** order
     /// `(pitch, yaw, roll)`.
     ///
-    /// This matches the reference `quaternion_roll_pitch_yaw(p, y, r)`.
+    /// Euler order is (pitch, yaw, roll) (YXZ, D3D-style).
     #[inline]
     pub fn from_euler_yxz(pitch: T, yaw: T, roll: T) -> Self {
         let half_p = pitch / (T::ONE + T::ONE);
@@ -112,7 +111,7 @@ impl<T: FloatNum> Quaternion<T> {
     /// Extracts euler angles in **YXZ** order `(pitch, yaw, roll)`.
     ///
     /// The inverse of [`from_euler_yxz`](Self::from_euler_yxz); matches the
-    /// reference `quaternion_to_euler` scalar path.
+    /// scalar path.
     #[inline]
     pub fn to_euler_yxz(&self) -> Vector3<T> {
         let singularity_test = self.y * self.z - self.x * self.w;
@@ -122,13 +121,13 @@ impl<T: FloatNum> Quaternion<T> {
         let neg_one = -T::ONE;
         let cutoff = T::from_f32(0.499_999);
 
-        let (roll, pitch, yaw);
+        let (pitch, yaw, roll);
         if singularity_test.abs() < cutoff {
             let y1 = (T::ONE + T::ONE) * (self.x * self.z + self.y * self.w);
             let y2 = self.z * self.z - self.x * self.x - self.y * self.y + self.w * self.w;
-            roll = neg_one * clamp(x2, neg_one, T::ONE).asin();
-            pitch = y1.atan2(y2);
-            yaw = z1.atan2(z2);
+            pitch = neg_one * clamp(x2, neg_one, T::ONE).asin();
+            yaw = y1.atan2(y2);
+            roll = z1.atan2(z2);
         } else {
             // Gimbal-lock fallback (yaw locked to 0), matching the reference.
             let a = self.x * self.y + self.z * self.w;
@@ -137,14 +136,13 @@ impl<T: FloatNum> Quaternion<T> {
             let e = self.y * self.z + self.x * self.w;
             let y1 = a * e + b * c;
             let y2 = b * e - a * c;
-            roll = neg_one * clamp(x2, neg_one, T::ONE).asin();
-            pitch = y1.atan2(y2);
-            yaw = T::ZERO;
+            pitch = neg_one * clamp(x2, neg_one, T::ONE).asin();
+            yaw = y1.atan2(y2);
+            roll = T::ZERO;
         }
-        // The reference computes (roll, pitch, yaw) but, given our
-        // from_euler_yxz(pitch, yaw, roll) argument order, the returned
-        // components correspond to (pitch, yaw, roll) in our API.
-        Vector3::new(roll, pitch, yaw)
+        // Contract: the returned components follow the same (pitch, yaw, roll)
+        // order as [`from_euler_yxz`](Self::from_euler_yxz); YXZ rotation order.
+        Vector3::new(pitch, yaw, roll)
     }
 
     /// Length.
@@ -195,7 +193,7 @@ impl<T: FloatNum> Quaternion<T> {
     /// Rotates a vector by this (unit) quaternion.
     ///
     /// Equivalent to `Matrix4::from_quat(q).transform_vec3(v)`; assumes `q` is
-    /// unit-length, matching the reference D3D-style convention.
+    /// unit-length.
     #[inline]
     pub fn rotate_vec3(&self, v: Vector3<T>) -> Vector3<T> {
         let qv = self.xyz();
@@ -236,7 +234,7 @@ impl<T: FloatNum> Quaternion<T> {
 
     /// Builds the quaternion that rotates `from` to `to` (both directions).
     ///
-    /// Matches `quaternion_from_to` semantics, including the
+    /// Rotation-between-vectors semantics, including the
     /// opposite-vector and near-parallel edge cases.
     #[inline]
     pub fn from_to(from: Vector3<T>, to: Vector3<T>) -> Self {
@@ -279,7 +277,7 @@ impl<T: FloatNum> Quaternion<T> {
     /// Extracts a rotation quaternion from a [`Matrix4`].
     ///
     /// Uses only the upper-left 3×3 rotation part; matches the standard
-    /// `quaternion_from_matrix` extraction.
+    /// matrix extraction.
     #[inline]
     pub fn from_mat4(m: &Matrix4<T>) -> Self {
         let m00 = m.m[0][0];
@@ -421,9 +419,8 @@ mod tests {
     }
 
     #[test]
-    fn euler_yxz_matches_dxmath_matrix() {
-        // Reference computed independently (f64) from the reference
-        // `quaternion_roll_pitch_yaw(0.3, 0.4, 0.5)` -> Standard
+    fn euler_yxz_matches_matrix() {
+        // Reference computed independently (f64): YXZ (0.3, 0.4, 0.5) -> standard
         // row-vector quaternion-to-matrix.
         let p = 0.3f64;
         let y = 0.4f64;
