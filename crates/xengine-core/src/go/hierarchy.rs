@@ -55,7 +55,7 @@ pub(crate) fn would_cycle(world: &crate::World, ancestor: Entity, mut node: Enti
         if node == ancestor {
             return true;
         }
-        if !seen.insert(node.index()) {
+        if !seen.insert(node) {
             return false; // existing cycle in the data; do not loop forever
         }
         let parent = match world.get::<Parent>(node) {

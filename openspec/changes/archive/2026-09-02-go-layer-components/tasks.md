@@ -51,4 +51,4 @@
 - [x] 7.1 `cargo test`（xengine-core，含新单测）全绿
 - [x] 7.2 `cargo clippy --all-targets -D warnings` + `cargo fmt --check` 通过
 - [x] 7.3 `openspec change validate go-layer-components` 通过
-- [ ] 7.4 归档（待实现完成）
+- [x] 7.4 归档（已完成：`2026-09-02-go-layer-components` 归档，go-layer 规范创建 + core-ecs 规范更新）

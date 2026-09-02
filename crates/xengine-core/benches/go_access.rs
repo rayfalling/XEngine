@@ -249,13 +249,14 @@ fn build_go_scene() -> (
     let mut scene = Scene::new();
     let mut handles = Vec::with_capacity(N);
     for i in 0..N {
-        let e = scene
+        // Safety: the pinned box value never moves (single-threaded bench).
+        let e = unsafe { Scene::pinned_mut(&mut scene) }
             .create_go(GoTransform {
                 position: Vector3F::new(i as f32, 0.0, 0.0),
                 ..GoTransform::default()
             })
             .unwrap();
-        handles.push(scene.go_handle(e));
+        handles.push(unsafe { Scene::pinned_mut(&mut scene) }.go_handle(e));
     }
     (scene, handles)
 }
@@ -354,7 +355,11 @@ fn main() {
     {
         let (mut scene, handles) = build_go_scene();
         bench("F. go_handle", TICKS, || {
-            go_handle_access(&mut scene, &handles, 1.0 / 60.0)
+            go_handle_access(
+                unsafe { Scene::pinned_mut(&mut scene) },
+                &handles,
+                1.0 / 60.0,
+            )
         });
     }
 }

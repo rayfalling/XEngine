@@ -16,7 +16,8 @@ fn demo_engine() {
     // Auto-registration path + explicit scriptable registration is covered
     // by the core test suite; here we exercise the basic loop through a scene.
     for i in 0..10 {
-        scene
+        // Safety: the pinned box is the only handle; its heap value never moves.
+        unsafe { Scene::pinned_mut(&mut scene) }
             .world_mut()
             .create2(Position(i as f32), Velocity(1.0))
             .unwrap();

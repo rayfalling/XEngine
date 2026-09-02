@@ -110,7 +110,8 @@ impl Engine {
     }
 
     pub fn scene_mut(&mut self) -> &mut Scene {
-        &mut self.scene
+        // Safety: the engine owns the pinned box and never moves its value.
+        unsafe { crate::go::scene::Scene::pinned_mut(&mut self.scene) }
     }
 
     /// Resets the fixed-step accumulator (e.g. after a long pause).
@@ -134,20 +135,25 @@ impl Engine {
             }
             self.accumulator -= self.fixed_step;
             fixed_runs += 1;
+            // Safety: the engine owns the pinned box and never moves its value.
+            let scene = unsafe { crate::go::scene::Scene::pinned_mut(&mut self.scene) };
             self.schedule
-                .run_stage(self.scene.world_mut(), Stage::FixedUpdate);
+                .run_stage(scene.world_mut(), Stage::FixedUpdate);
         }
         // Publish time bookkeeping before the frame-update systems.
-        self.scene.world_mut().insert_resource(TimeState {
+        // Safety: the engine owns the pinned box and never moves its value.
+        let scene = unsafe { crate::go::scene::Scene::pinned_mut(&mut self.scene) };
+        scene.world_mut().insert_resource(TimeState {
             frame: self.frame,
             dt,
             fixed_step: self.fixed_step,
             fixed_runs,
         });
+        let scene = unsafe { crate::go::scene::Scene::pinned_mut(&mut self.scene) };
+        self.schedule.run_stage(scene.world_mut(), Stage::Update);
+        let scene = unsafe { crate::go::scene::Scene::pinned_mut(&mut self.scene) };
         self.schedule
-            .run_stage(self.scene.world_mut(), Stage::Update);
-        self.schedule
-            .run_stage(self.scene.world_mut(), Stage::PostUpdate);
+            .run_stage(scene.world_mut(), Stage::PostUpdate);
         RunStats {
             frame: self.frame,
             dt,

@@ -1,7 +1,8 @@
 # go-layer Specification
 
 ## Purpose
-TBD - created by archiving change go-layer-components. Update Purpose after archive.
+游戏对象层：定义 GO（Entity 别名）及其三组件套（Transform/SceneRef/Parent+Children）、Scene 游戏对象容器（拥有 ECS World，承载组件生命周期钩子上下文）、层级维护与级联 destroy/detach、dirty 标记驱动的全局变换传播（按实体并行接入点），以及脚本识别的 GoHandle（位置缓存+世代校验）契约。渲染层在此之上消费 GlobalTransform 与场景结构。
+
 ## Requirements
 ### Requirement: Scene 容器与 GO 语义
 `Scene` SHALL 为 GO 层的游戏对象容器（`xengine-core::go`），拥有 ECS `World`、分配 `scene_id`（全局唯一）与场景内 `serial` 序号；`Scene::new()` SHALL 返回 `Pin<Box<Scene>>`（固定地址供钩子上下文引用，单线程）。`GameObject` SHALL 为 `Entity` 的类型别名（无包装结构，实体即 GO）。GO 的创建/生命周期/层级/传播/包装层访问 MUST 经 `Scene` API 完成（ECS `World` 仍可直接操作，但钩子只保证经 Scene 的运行路径完整触发）。`Scene::create_go` SHALL 生成三组件套餐：`Transform`、`SceneRef`、`Parent`（`Children` 由层级维护系统维护）。

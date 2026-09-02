@@ -41,10 +41,10 @@ impl Component for TransformDirty {}
 fn compute_world(world: &World, entity: Entity) -> Matrix4F {
     // Build [e, parent, ..., root].
     let mut chain: Vec<Entity> = Vec::new();
-    let mut seen: HashSet<u32> = HashSet::new();
+    let mut seen: HashSet<Entity> = HashSet::new();
     let mut node = entity;
     loop {
-        if !seen.insert(node.index()) {
+        if !seen.insert(node) {
             break; // malformed cycle: stop to avoid looping forever
         }
         chain.push(node);
@@ -114,7 +114,7 @@ pub(crate) fn propagate_inner(world: &mut World, mut on_recompute: impl FnMut(En
     // Phase 1: gather initially-dirty roots and mark all descendants.
     let mut roots: Vec<Entity> = Vec::new();
     world.iterate::<TransformDirty>(|e, _| roots.push(e));
-    let mut visited: HashSet<u32> = roots.iter().map(|e| e.index()).collect();
+    let mut visited: HashSet<Entity> = roots.iter().copied().collect();
     let mut stack: Vec<Entity> = roots.clone();
     while let Some(e) = stack.pop() {
         let children = match world.get::<Children>(e) {
@@ -122,7 +122,7 @@ pub(crate) fn propagate_inner(world: &mut World, mut on_recompute: impl FnMut(En
             _ => Vec::new(),
         };
         for child in children {
-            if visited.insert(child.index()) {
+            if visited.insert(child) {
                 if !world.contains::<TransformDirty>(child).unwrap_or(false) {
                     let _ = world.add(child, TransformDirty);
                 }
@@ -183,7 +183,8 @@ mod tests {
     #[test]
     fn root_rotation_moves_child() {
         let mut scene = Scene::new();
-        let [root, _, leaf] = build_chain(&mut scene, Vector3F::ZERO);
+        let scene = unsafe { Scene::pinned_mut(&mut scene) };
+        let [root, _, leaf] = build_chain(scene, Vector3F::ZERO);
         // Give the leaf a local position (1,0,0).
         scene
             .set_transform_position(leaf, Vector3F::new(1.0, 0.0, 0.0))
@@ -230,7 +231,8 @@ mod tests {
     #[test]
     fn dirty_subtree_cascades_and_resets() {
         let mut scene = Scene::new();
-        let [root, mid, leaf] = build_chain(&mut scene, Vector3F::ZERO);
+        let scene = unsafe { Scene::pinned_mut(&mut scene) };
+        let [root, mid, leaf] = build_chain(scene, Vector3F::ZERO);
         for e in [root, mid, leaf] {
             scene
                 .world_mut()
@@ -279,7 +281,8 @@ mod tests {
     #[test]
     fn leaf_change_does_not_touch_ancestors() {
         let mut scene = Scene::new();
-        let [root, mid, leaf] = build_chain(&mut scene, Vector3F::ZERO);
+        let scene = unsafe { Scene::pinned_mut(&mut scene) };
+        let [root, mid, leaf] = build_chain(scene, Vector3F::ZERO);
         for e in [root, mid, leaf] {
             scene
                 .world_mut()
@@ -292,8 +295,8 @@ mod tests {
                 .unwrap();
         }
         // Set a sentinel on root/mid so an accidental recompute would overwrite it.
-        sentinel_world(&mut scene, root, Vector3F::new(99.0, 0.0, 0.0));
-        sentinel_world(&mut scene, mid, Vector3F::new(88.0, 0.0, 0.0));
+        sentinel_world(scene, root, Vector3F::new(99.0, 0.0, 0.0));
+        sentinel_world(scene, mid, Vector3F::new(88.0, 0.0, 0.0));
         // Mark only the leaf dirty.
         scene
             .set_transform_position(leaf, Vector3F::new(0.0, 0.0, 0.0))
@@ -330,7 +333,8 @@ mod tests {
     #[test]
     fn ancestor_independent_computation() {
         let mut scene = Scene::new();
-        let [root, mid, leaf] = build_chain(&mut scene, Vector3F::ZERO);
+        let scene = unsafe { Scene::pinned_mut(&mut scene) };
+        let [root, mid, leaf] = build_chain(scene, Vector3F::ZERO);
         for e in [root, mid, leaf] {
             scene
                 .world_mut()
@@ -369,7 +373,8 @@ mod tests {
     #[test]
     fn unmarked_direct_write_is_not_propagated() {
         let mut scene = Scene::new();
-        let [_, _, leaf] = build_chain(&mut scene, Vector3F::ZERO);
+        let scene = unsafe { Scene::pinned_mut(&mut scene) };
+        let [_, _, leaf] = build_chain(scene, Vector3F::ZERO);
         scene
             .world_mut()
             .add(
@@ -397,7 +402,8 @@ mod tests {
     #[test]
     fn no_global_transform_entity_is_skipped() {
         let mut scene = Scene::new();
-        let [root, _, leaf] = build_chain(&mut scene, Vector3F::ZERO);
+        let scene = unsafe { Scene::pinned_mut(&mut scene) };
+        let [root, _, leaf] = build_chain(scene, Vector3F::ZERO);
         // root has GlobalTransform; mid/leaf do not.
         scene
             .world_mut()
@@ -437,6 +443,7 @@ mod tests {
         use crate::system::Stage;
 
         let mut scene = Scene::new();
+        let scene = unsafe { Scene::pinned_mut(&mut scene) };
         let root = scene.create_go(Transform::default()).unwrap();
         let mid = scene.create_go(Transform::default()).unwrap();
         let _leaf = scene.create_go(Transform::default()).unwrap();

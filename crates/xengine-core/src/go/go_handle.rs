@@ -55,12 +55,16 @@ impl fmt::Display for GoHandle {
 pub enum GoHandleError {
     /// The entity was destroyed (or the handle's generation no longer matches).
     GoHandleStale,
+    /// The entity lives but the component trio (Transform / SceneRef / Parent)
+    /// is incomplete at the validated location.
+    MissingComponent,
 }
 
 impl fmt::Display for GoHandleError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::GoHandleStale => write!(f, "go handle is stale (entity destroyed)"),
+            Self::MissingComponent => write!(f, "go entity is missing one of the trio components"),
         }
     }
 }
@@ -69,9 +73,11 @@ impl std::error::Error for GoHandleError {}
 
 /// A borrowed view over a game object's component trio (no bare pointers).
 ///
-/// Constructed by `Scene::go_view`: it validates the cached location and reuses
-/// it for O(1) component access (or re-resolves on a stale location). Each
-/// accessor re-derives the reference from the validated position.
+/// Constructed by `Scene::go_view`: it validates the cached location AND the
+/// presence of the trio, then reuses the position for O(1) component access
+/// (or re-resolves on a stale location). While the view borrows the world,
+/// rust's ownership rules make concurrent component removal impossible, so
+/// the accessors cannot panic for a correctly constructed view.
 pub struct GoView<'a> {
     pub(crate) world: &'a mut World,
     pub(crate) loc: GoLoc,
@@ -120,6 +126,7 @@ mod tests {
     #[test]
     fn handle_display_and_entity() {
         let mut scene = Scene::new();
+        let scene = unsafe { Scene::pinned_mut(&mut scene) };
         let e = scene.create_go(Transform::default()).unwrap();
         let handle = scene.go_handle(e);
         assert_eq!(handle.entity(), e);

@@ -84,7 +84,14 @@ impl World {
     /// lifetime and is only mutated from the single thread driving the world.
     /// When no context is bound the hooks are skipped (so the GO layer can
     /// guarantee hooks only fire once a `Scene` exists and is bound).
-    pub fn bind_hook_context(&mut self, ctx: *mut ()) {
+    ///
+    /// # Safety
+    /// `ctx` must be a pointer to an object that (a) remains valid for the
+    /// entire lifetime of this world, (b) never moves while bound, and (c)
+    /// matches the type the registered hooks will cast it to (the GO layer
+    /// binds `&mut Scene` via `Pin<Box<Scene>>`). A dangling or moving pointer
+    /// results in undefined behavior when a hook fires. Hooks run single-threaded.
+    pub unsafe fn bind_hook_context(&mut self, ctx: *mut ()) {
         self.hook_context = Some(ctx);
     }
 
@@ -1091,7 +1098,7 @@ mod tests {
             let counter = HookCounter::new();
             let mut w = World::new();
             w.register_component_meta::<Tracked>(make_hooks()).unwrap();
-            w.bind_hook_context(counter.ctx());
+            unsafe { w.bind_hook_context(counter.ctx()) };
             let e = w.create1(Tracked(1)).unwrap();
             assert_eq!(counter.add.load(Ordering::SeqCst), 1, "on_add fires once");
             assert_eq!(counter.remove.load(Ordering::SeqCst), 0);
@@ -1117,7 +1124,7 @@ mod tests {
             let counter = HookCounter::new();
             let mut w = World::new();
             w.register_component_meta::<Tracked>(make_hooks()).unwrap();
-            w.bind_hook_context(counter.ctx());
+            unsafe { w.bind_hook_context(counter.ctx()) };
             let e = w.create1(Tracked(1)).unwrap();
             assert_eq!(counter.add.load(Ordering::SeqCst), 1);
             // Adding a second (hook-less) component migrates Tracked bitwise.
@@ -1146,7 +1153,7 @@ mod tests {
             let counter = HookCounter::new();
             let mut w = World::new();
             w.register_component_meta::<Tracked>(make_hooks()).unwrap();
-            w.bind_hook_context(counter.ctx());
+            unsafe { w.bind_hook_context(counter.ctx()) };
             let _ = w.create1(Tracked(1)).unwrap();
             let _ = w.create1(Tracked(2)).unwrap();
             let _ = w.create1(Tracked(3)).unwrap();
@@ -1165,7 +1172,7 @@ mod tests {
             let counter = HookCounter::new();
             let mut w = World::new();
             w.register_component_meta::<Tracked>(make_hooks()).unwrap();
-            w.bind_hook_context(counter.ctx());
+            unsafe { w.bind_hook_context(counter.ctx()) };
             let e = {
                 let mut cmds = w.commands();
                 cmds.create1(Tracked(1))
@@ -1200,7 +1207,7 @@ mod tests {
             w.register_component_meta::<Tracked>(make_hooks()).unwrap();
             let err = w.register::<Tracked>(false).unwrap_err();
             assert!(matches!(err, WorldError::DuplicateRegistration(_)));
-            w.bind_hook_context(counter.ctx());
+            unsafe { w.bind_hook_context(counter.ctx()) };
             let e = w.create1(Tracked(1)).unwrap();
             assert_eq!(
                 counter.add.load(Ordering::SeqCst),
@@ -1214,7 +1221,7 @@ mod tests {
         fn hookless_type_zero_impact() {
             let counter = HookCounter::new();
             let mut w = World::new();
-            w.bind_hook_context(counter.ctx());
+            unsafe { w.bind_hook_context(counter.ctx()) };
             // Other is auto-registered without hooks; context is bound but the
             // descriptor has no hooks so nothing may fire.
             let e = w.create1(Other(5)).unwrap();
