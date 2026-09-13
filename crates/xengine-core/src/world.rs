@@ -483,6 +483,17 @@ impl World {
         Ok(arch.has(&TypeId::of::<T>()))
     }
 
+    /// Creates a shared, thread-shareable read-only view for parallel jobs.
+    ///
+    /// Contracts the caller must uphold (they are what makes
+    /// [`WorldReadView::get`] sound across threads):
+    /// - the view is used only while no structural mutation of this world
+    ///   happens and no other `&mut World` access exists;
+    /// - the view does not outlive the parallel region that uses it.
+    pub fn read_view(&self) -> WorldReadView<'_> {
+        WorldReadView { world: self }
+    }
+
     // ── location accessors (GoHandle O(1) path, crate-internal) ────────────
 
     /// The `(archetype_id, row)` locating the live entity, or `None` when the
@@ -792,6 +803,125 @@ fn get_two_mut<T>(v: &mut [T], a: usize, b: usize) -> (&mut T, &mut T) {
     } else {
         let (left, right) = v.split_at_mut(a);
         (&mut right[0], &mut left[b])
+    }
+}
+
+/// A narrow, thread-shareable read-only view of a [`World`].
+///
+/// Parallel jobs must not receive a `&World`: the world is neither `Send` nor
+/// `Sync` (lifecycle-context pointer, resource map, command queue). This view
+/// exposes **only** shared component reads for `T: Sync`; every mutating entry
+/// point (`get_mut`, `add`, `remove`, `create*`, `destroy`, `clear`,
+/// `flush_commands`) and every non-`Sync` part (resources, hook context, queue)
+/// is deliberately absent, so the compiler enforces the narrowing.
+///
+/// Obtain one with [`World::read_view`].
+pub struct WorldReadView<'a> {
+    world: &'a World,
+}
+
+// Safety: `WorldReadView` only ever hands out `&T` for `T: Sync` (see `get`),
+// reading archetype columns that `Column` already declares `Sync`
+// (`storage.rs`), and it offers no API that could mutate the world or expose
+// the non-`Sync` parts of `World`. Callers uphold the contract documented on
+// `World::read_view`: the view is only used inside a parallel region during
+// which no structural mutation and no other `&mut World` access exists.
+unsafe impl Sync for WorldReadView<'_> {}
+
+impl WorldReadView<'_> {
+    /// Shared reference to the entity's component, or `None` when the entity is
+    /// stale or does not have the component.
+    pub fn get<T: Sync + 'static>(&self, entity: Entity) -> Option<&T> {
+        self.world.get::<T>(entity).ok().flatten()
+    }
+
+    /// Whether the entity has the component type.
+    pub fn contains<T: 'static>(&self, entity: Entity) -> bool {
+        self.world.contains::<T>(entity).unwrap_or(false)
+    }
+
+    /// Whether the entity is alive.
+    pub fn contains_entity(&self, entity: Entity) -> bool {
+        self.world.contains_entity(entity)
+    }
+}
+
+#[cfg(test)]
+mod read_view_tests {
+    use super::*;
+    use std::thread;
+
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    struct Value(u32);
+
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    struct Tag(u32);
+
+    #[test]
+    fn read_view_reads_live_components_and_handles_stale_entities() {
+        let mut world = World::new();
+        let first = world.create2(Value(1), Tag(10)).unwrap();
+        let second = world.create1(Value(2)).unwrap();
+        let dead = world.create1(Value(3)).unwrap();
+        world.destroy(dead).unwrap();
+
+        let view = world.read_view();
+        assert_eq!(view.get::<Value>(first), Some(&Value(1)));
+        assert_eq!(view.get::<Value>(second), Some(&Value(2)));
+        assert_eq!(view.get::<Tag>(second), None, "component missing");
+        assert_eq!(view.get::<Value>(dead), None, "stale entity");
+        assert!(view.contains::<Tag>(first));
+        assert!(!view.contains::<Tag>(second));
+        assert!(view.contains_entity(first));
+        assert!(!view.contains_entity(dead));
+    }
+
+    #[test]
+    fn read_view_is_shareable_across_threads() {
+        let mut world = World::new();
+        let mut entities = Vec::new();
+        for i in 0..256u32 {
+            entities.push(world.create2(Value(i), Tag(i * 2)).unwrap());
+        }
+        let view = world.read_view();
+        let entities = &entities;
+        let sums = thread::scope(|scope| {
+            let mut handles = Vec::new();
+            for _ in 0..4 {
+                handles.push(scope.spawn(|| {
+                    let mut sum = 0u64;
+                    for (i, entity) in entities.iter().enumerate() {
+                        let value = view.get::<Value>(*entity).expect("live value");
+                        let tag = view.get::<Tag>(*entity).expect("live tag");
+                        assert_eq!(value.0, i as u32);
+                        assert_eq!(tag.0, (i as u32) * 2);
+                        sum += value.0 as u64 + tag.0 as u64;
+                    }
+                    sum
+                }));
+            }
+            handles
+                .into_iter()
+                .map(|handle| handle.join().expect("reader thread"))
+                .collect::<Vec<_>>()
+        });
+        let expected: u64 = (0..256u32).map(|i| i as u64 * 3).sum();
+        assert!(sums.iter().all(|sum| *sum == expected), "sums: {sums:?}");
+    }
+
+    #[test]
+    fn read_view_does_not_change_world_behaviour() {
+        let mut world = World::new();
+        let entity = world.create1(Value(5)).unwrap();
+        {
+            let view = world.read_view();
+            assert_eq!(view.get::<Value>(entity), Some(&Value(5)));
+        }
+        world.get_mut::<Value>(entity).unwrap().unwrap().0 = 9;
+        world.add(entity, Tag(1)).unwrap();
+        assert_eq!(world.get::<Value>(entity).unwrap(), Some(&Value(9)));
+        assert!(world.contains::<Tag>(entity).unwrap());
+        assert_eq!(world.entity_count(), 1);
     }
 }
 
