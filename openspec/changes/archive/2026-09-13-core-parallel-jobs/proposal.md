@@ -52,6 +52,6 @@
 - **帧屏障**：`end_frame()` 返回后帧内提交的作业全部完成、帧队列清空；跨帧无残留作业
 - **并行写安全**：阶段 2a 只读 + 写自有缓冲，2b 串行写回；`WorldReadView` 是唯一新增 unsafe（`unsafe impl Sync` + `# Safety` 文档），并发读一致性有单测
 - **热路径零分配**：`compute_world` 不再每实体分配 `Vec`/`HashSet`（worker scratch 复用 + 深度上限；深链与畸形环单测保证不挂起）
-- **性能预算**（人工记录进归档，**不作为 CI 门禁**——CI runner 为 2 核且噪声大）：`benches/propagate.rs` 覆盖宽树/深链/平坦三形态 × N=10k/100k，分段报告 2a/2b 耗时；目标：≥8 逻辑核、N=100k 时并行档相对单线程档 **≥2.0x**，单线程档相对变更前回归 **≤5%**
+- **性能预算**（人工记录进归档，**不作为 CI 门禁**——CI runner 为 2 核且噪声大）：`benches/propagate.rs` 覆盖宽树/深链/平坦三形态 × N=10k/100k，分段报告 2a/2b 耗时。**实测结果（worker=8，N=100k，见 `README.md`）**：阶段 2a 并行化有效（宽树 3.55→0.76 ms，4.6x；深链 1523→185 ms，8.2x）；总加速受串行 2b（逐实体 archetype 迁移清 dirty，占宽树/平坦 75%+ 时长）限制——深链 **6.2x**、宽树 **1.09x（无回退）**、平坦在噪声内。目标"≥2.0x"在 2a 主导负载上达成，在 2b 主导负载上未达成，瓶颈明确并把"2b 批量清除 / dirty 集合化"列为后续独立变更。
 - `cargo clippy --workspace --all-targets -- -D warnings` 与 `cargo fmt --all -- --check` 通过
 - `openspec change validate core-parallel-jobs` 通过，并完成归档（合入 main 前置条件）

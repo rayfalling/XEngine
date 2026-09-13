@@ -49,8 +49,13 @@
 ### D7 panic 安全（Rust 特有，NeoX 无对应问题）
 工作线程内闭包以 `catch_unwind(AssertUnwindSafe(..))` 执行；panic payload 存入作业记录；完成计数照常递减（不得因 panic 不归零导致等待者永久阻塞）；等待该作业的线程以 `resume_unwind` 复现 payload。分块并行中任一块 panic → 记录首个 payload，其余块安全收尾后于调用线程抛出。**这是本变更最重要的正确性差异点**：NeoX 用 C++ 异常/直接崩溃处理，Rust 侧若不做捕获即等价于"工作线程静默死亡 + 计数器泄漏 = 死锁"。
 
-### D8 unsafe 边界与并行写策略（用户决策：方案 A）
-**并行计算 + 串行写回**：阶段 2a 只读（经 `WorldReadView`）+ 写每实体独立结果缓冲；阶段 2b 串行写回 `GlobalTransform`、清 `TransformDirty`（结构变更全部在此）。本变更**唯一新增 unsafe** 为 `WorldReadView` 的 `unsafe impl Sync`，其 `# Safety` 论证：视图只暴露 `get::<T: Sync>` / `contains`（组件列共享读），不暴露资源、钩子上下文指针、命令队列或任何结构变更入口；视图只在并行区域内、且期间不存在 `&mut World` 访问。**备选**：按 archetype 列切分并行写（额外裸指针切分 unsafe，风险更大，用户否决）；串行快照后并行计算（祖先链遍历仍串行，上限低，用户否决）。
+### D8 unsafe 边界与并行写策略（用户决策：方案 A，实施中追加批准一处）
+**并行计算 + 串行写回**：阶段 2a 只读（经 `WorldReadView`）+ 写每实体独立结果缓冲；阶段 2b 串行写回 `GlobalTransform`、清 `TransformDirty`（结构变更全部在此）。本变更新增 **2 处**受控 unsafe，均有 `# Safety` 文档与回归单测：
+
+1. `WorldReadView` 的 `unsafe impl Sync`（`world.rs`）：视图只暴露 `get::<T: Sync>` / `contains` / `contains_entity`（组件列共享读），不暴露资源、钩子上下文指针、命令队列或任何结构变更入口；视图只在并行区域内使用，且期间不存在 `&mut World` 访问。
+2. `JobSystem::parallel_for` 的作用域 lifetime 擦除（`parallel/jobs.rs`，**实施中追加批准**）：Rust 借用检查器下，把捕获借用（`&WorldReadView`、结果缓冲、实体表）的闭包交给常驻工作线程只有三条路——受控 lifetime 擦除、要求 `'static` 闭包（传播退化为串行快照）、或改用 `std::thread::scope` 每次现开线程。用户批准第 1 条（Rayon / `bevy_tasks::Scope` 同构）。擦除的 `# Safety` 论证：ctx 由 `parallel_for` 的栈帧持有，函数在返回前 join 全部块作业（含调用线程自身的领取循环），因此被擦除的 `'static` 永不越过真实借用期；`ScopedCtx<'_>` 因持 `&dyn Fn + Send + Sync` 与原子量而 `Send + Sync`，故擦除后的 `Arc` 可被 `Send + 'static` 载荷合法捕获。
+
+**备选**：按 archetype 列切分并行写（额外裸指针切分 unsafe，风险更大，用户否决）；串行快照后并行计算（祖先链遍历仍串行，上限低，用户否决）。
 
 ### D9 确定性与"可观察行为不变"
 主线程队列按提交序、同优先级 FIFO、分块结果按块索引写回 ⇒ 结果与 worker 数无关（`core-frame` 帧确定性要求不被破坏）。回归手段：同一负载在 worker 数 {1,2,4,8} 与 `single_threaded` 下断言逐字节一致；`on_recompute` 每实体恰一次；`TransformDirty` 重置集合一致。
