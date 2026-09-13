@@ -43,14 +43,14 @@ cargo run
 # 测试（核心函数/组件单测 + 集成测试）
 cargo test
 
-# 基准（100k 实体 create/iterate/join 占位）
+# 基准（ECS 占位 + 变换传播串行/并行分段）
 cargo bench -p xengine-core
 ```
 
 ## 项目结构
 
-- `crates/xengine-core/` — **核心层（100% Rust，零外部依赖）**：ECS（实体/组件/Archetype SoA/查询/资源/Commands）、帧调度（FixedUpdate/Update/PostUpdate、限帧/不限帧、拓扑排序+冲突检测）、RenderSnapshot 接口
-- `crates/xengine/` — bin 入口与最小 demo
+- `crates/xengine-core/` — **核心层（100% Rust，零外部依赖）**：ECS（实体/组件/Archetype SoA/查询/资源/Commands）、帧调度（FixedUpdate/Update/PostUpdate、限帧/不限帧、拓扑排序+冲突检测）、并行底座（JobSystem 帧任务队列 + ThreadPool 长任务专用线程）、GO 层（Scene/Transform/层级/并行变换传播/GoHandle）、RenderSnapshot 接口
+- `crates/xengine/` — bin 入口与最小 demo（GO 层级 + 并行传播 + 帧屏障）
 - `openspec/` — OpenSpec 规范驱动工作流（见上）
 - `.agents/skills/` — 官方 OpenSpec 工作流技能（自动发现）
 

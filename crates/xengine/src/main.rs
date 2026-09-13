@@ -1,45 +1,102 @@
-use xengine_core::{AccessKind, Engine, FrameMode, SceneHandle, Schedule, Stage, System};
+use std::sync::Arc;
+use std::time::Duration;
+
+use xengine_core::go::global_transform::transform_propagate_system;
+use xengine_core::go::hierarchy::hierarchy_maintain_system;
+use xengine_core::{
+    AccessKind, Engine, FrameMode, GlobalTransform, JobConfig, JobSystem, SceneHandle, Schedule,
+    Stage, System, Transform, TransformDirty, last_propagate_timing,
+};
+use xengine_math::{Matrix4F, Vector3F};
 
 fn main() {
     println!("Hello, world! ({})", xengine_core::engine_name());
     demo_engine();
 }
 
-/// Minimal end-to-end engine demo: one movement system over a few game objects.
+/// End-to-end demo: a GO hierarchy, dirty-driven transform propagation running
+/// phase 2a on the job system, and the engine's frame barrier.
 fn demo_engine() {
-    #[derive(Debug, Clone, Copy)]
-    struct Position(f32);
-    #[derive(Debug, Clone, Copy)]
-    struct Velocity(f32);
+    let jobs = Arc::new(JobSystem::new(JobConfig::default()));
+    println!("job workers: {}", jobs.worker_count());
 
     let mut scene = SceneHandle::new();
-    // Auto-registration path + explicit scriptable registration is covered
-    // by the core test suite; here we exercise the basic loop through a scene.
-    for i in 0..10 {
-        // Safety: the pinned box is the only handle; its heap value never moves.
+    let root = scene.create_go(Transform::default()).unwrap();
+    let mut leaves = Vec::new();
+    for i in 0..16 {
+        let leaf = scene
+            .create_go(Transform {
+                position: Vector3F::new(i as f32, 0.0, 0.0),
+                ..Transform::default()
+            })
+            .unwrap();
+        scene.set_parent(leaf, Some(root)).unwrap();
         scene
             .world_mut()
-            .create2(Position(i as f32), Velocity(1.0))
+            .add(
+                leaf,
+                GlobalTransform {
+                    world: Matrix4F::IDENTITY,
+                },
+            )
             .unwrap();
+        leaves.push(leaf);
     }
-    let systems = vec![System::with_spec(
-        "movement",
+    scene
+        .world_mut()
+        .add(
+            root,
+            GlobalTransform {
+                world: Matrix4F::IDENTITY,
+            },
+        )
+        .unwrap();
+
+    // Update stage: move the root and mark it dirty (direct field writes need an
+    // explicit mark, as documented on `Transform`).
+    let mover = System::with_spec(
+        "move_root",
         Stage::Update,
         &[
-            ("Position", AccessKind::Write),
-            ("Velocity", AccessKind::Read),
+            ("Transform", AccessKind::Write),
+            ("TransformDirty", AccessKind::Write),
         ],
         None,
         None,
-        move |w| {
-            w.query2::<Position, Velocity>(|_e, pos, vel| {
-                pos.0 += vel.0;
-            })
-            .expect("distinct query types");
+        move |world| {
+            if let Ok(Some(transform)) = world.get_mut::<Transform>(root) {
+                transform.position = Vector3F::new(0.0, 1.0, 0.0);
+            }
+            let _ = world.add(root, TransformDirty);
         },
-    )];
-    let schedule = Schedule::build(systems).unwrap();
-    let mut engine = Engine::new(scene, schedule, FrameMode::Capped { target_fps: 60 });
-    engine.tick(core::time::Duration::from_millis(16));
-    println!("entities moved: {}", engine.scene().world().entity_count());
+    );
+
+    // PostUpdate: hierarchy maintenance, then parallel propagation.
+    let schedule = Schedule::build(vec![
+        mover,
+        hierarchy_maintain_system(),
+        transform_propagate_system(Arc::clone(&jobs)),
+    ])
+    .expect("systems are ordered without conflicts");
+
+    let mut engine = Engine::new(scene, schedule, FrameMode::Capped { target_fps: 60 })
+        .with_jobs(Arc::clone(&jobs));
+    engine.tick(Duration::from_millis(16));
+
+    let last = *leaves.last().expect("at least one leaf");
+    let world = engine.scene().world();
+    if let Ok(Some(global)) = world.get::<GlobalTransform>(last) {
+        let origin = global.world.transform_point(Vector3F::ZERO);
+        println!(
+            "leaf world origin: ({:.2}, {:.2}, {:.2})",
+            origin.x, origin.y, origin.z
+        );
+    }
+    if let Some(timing) = last_propagate_timing() {
+        println!(
+            "propagate: entities={} scan={:?} 2a={:?} 2b={:?} parallel={}",
+            timing.entities, timing.scan, timing.compute, timing.apply, timing.parallel
+        );
+    }
+    println!("entities: {}", world.entity_count());
 }
