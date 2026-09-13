@@ -1,7 +1,7 @@
 # core-jobs Specification
 
 ## Purpose
-TBD - created by archiving change core-parallel-jobs. Update Purpose after archive.
+核心层并行执行底座：`JobSystem`（帧任务队列 + 工作线程池——NeoX `xjobsystem` 对齐的线程预算、三级优先级、Compute/Current/Main 执行位置、帮助式与阻塞式等待、panic 安全、`begin_frame`/`end_frame` 帧屏障、单线程等价模式、作用域 `parallel_for`）与 `ThreadPool`（长任务专用线程 lane，线程预算与 `JobConfig::reserve` 互相扣除）。由 go 层变换传播等系统消费，并作为后续系统级并行调度与并行查询原语的地基。
 
 ## Requirements
 
