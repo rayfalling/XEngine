@@ -23,7 +23,9 @@ pub mod scene_ref;
 pub mod transform;
 
 pub use component::Component;
-pub use global_transform::{GlobalTransform, TransformDirty};
+pub use global_transform::{
+    GlobalTransform, PropagateTiming, TransformDirty, last_propagate_timing, propagate_with_jobs,
+};
 pub use go_handle::{GoHandle, GoHandleError, GoLoc, GoView};
 pub use hierarchy::{Children, HierarchyError, Parent};
 pub use scene::{GameObject, Scene, SceneHandle};

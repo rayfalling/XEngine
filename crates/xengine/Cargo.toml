@@ -5,6 +5,7 @@ edition.workspace = true
 
 [dependencies]
 xengine-core = { workspace = true }
+xengine-math = { workspace = true }
 
 [[bin]]
 name = "xengine"

@@ -12,6 +12,7 @@ pub mod entity;
 pub mod error;
 pub mod frame;
 pub mod go;
+pub mod parallel;
 pub mod registry;
 pub mod render;
 pub mod schedule;
@@ -25,7 +26,12 @@ pub use error::{WorldError, WorldResult};
 pub use frame::{Engine, FrameMode, RunStats, TimeState};
 pub use go::{
     Children, Component, GameObject, GlobalTransform, GoHandle, GoHandleError, GoLoc, GoView,
-    HierarchyError, Parent, Scene, SceneHandle, SceneRef, Transform, TransformDirty,
+    HierarchyError, Parent, PropagateTiming, Scene, SceneHandle, SceneRef, Transform,
+    TransformDirty, last_propagate_timing, propagate_with_jobs,
+};
+pub use parallel::{
+    FrameStats, JobCategory, JobChain, JobConditional, JobConfig, JobGroup, JobHandle, JobPriority,
+    JobSystem, LaneSpec, LongTaskHandle, OwnedThread, ThreadPool, worker_count_for,
 };
 pub use render::{NullRenderSink, RenderSink, RenderSnapshot};
 pub use schedule::{Schedule, ScheduleError};
