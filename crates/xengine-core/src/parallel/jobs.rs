@@ -1321,12 +1321,15 @@ mod tests {
             let log = Arc::clone(&log);
             move || log.lock().unwrap_or_else(|e| e.into_inner()).push("high")
         });
-        let _ = jobs.spawn("low", JobPriority::Low, {
+        let low = jobs.spawn("low", JobPriority::Low, {
             let log = Arc::clone(&log);
             move || log.lock().unwrap_or_else(|e| e.into_inner()).push("low")
         });
         release.notify_all();
-        let _ = jobs.end_frame();
+        // `wait_blocking` never helps, so the single worker is the only
+        // executor and the log reflects the dispatch order deterministically
+        // (a helping wait would let this thread run one of the jobs too).
+        low.wait_blocking();
         assert_eq!(
             &*log.lock().unwrap_or_else(|e| e.into_inner()),
             &["high", "low"]
@@ -1349,14 +1352,17 @@ mod tests {
             }
         });
         started.wait();
+        let mut last = None;
         for tag in ["first", "second", "third"] {
-            let _ = jobs.spawn("queued", JobPriority::Normal, {
+            last = Some(jobs.spawn("queued", JobPriority::Normal, {
                 let log = Arc::clone(&log);
                 move || log.lock().unwrap_or_else(|e| e.into_inner()).push(tag)
-            });
+            }));
         }
         release.notify_all();
-        let _ = jobs.end_frame();
+        // Single executor on purpose: FIFO constrains the *dispatch* order, so
+        // the completion order is only deterministic without a helping waiter.
+        last.expect("three queued jobs").wait_blocking();
         assert_eq!(
             &*log.lock().unwrap_or_else(|e| e.into_inner()),
             &["first", "second", "third"]
